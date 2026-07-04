@@ -3,9 +3,11 @@
 package wailsui
 
 import (
+	"os"
 	"runtime"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -18,8 +20,9 @@ import (
 // the browser instead of only flashing in the taskbar.
 
 var (
-	u32 = windows.NewLazySystemDLL("user32.dll")
-	k32 = windows.NewLazySystemDLL("kernel32.dll")
+	u32     = windows.NewLazySystemDLL("user32.dll")
+	k32     = windows.NewLazySystemDLL("kernel32.dll")
+	shell32 = windows.NewLazySystemDLL("shell32.dll")
 
 	pEnumWindows              = u32.NewProc("EnumWindows")
 	pGetWindowThreadProcessId = u32.NewProc("GetWindowThreadProcessId")
@@ -32,7 +35,15 @@ var (
 	pShowWindow               = u32.NewProc("ShowWindow")
 	pSetWindowPos             = u32.NewProc("SetWindowPos")
 	pIsIconic                 = u32.NewProc("IsIconic")
+	pSendMessage              = u32.NewProc("SendMessageW")
 	pGetCurrentThreadId       = k32.NewProc("GetCurrentThreadId")
+	pExtractIconEx            = shell32.NewProc("ExtractIconExW")
+)
+
+const (
+	wmSetIcon = 0x0080
+	iconSmall = 0
+	iconBig   = 1
 )
 
 const (
@@ -75,6 +86,44 @@ func ourWindow() uintptr {
 	foundHWND = 0
 	pEnumWindows.Call(enumCB, 0)
 	return foundHWND
+}
+
+// applyWindowIcon puts the app's OWN icon on the title bar and Alt-Tab. Wails
+// doesn't set a window icon, so Windows draws the generic program icon there
+// (even though the taskbar/exe icon is correct). The icon is pulled from THIS
+// exe's embedded resource via ExtractIconEx — the same source the tray uses —
+// so it always matches. Retries briefly because the HWND may not exist the very
+// instant OnDomReady fires.
+func applyWindowIcon() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	p, err := syscall.UTF16PtrFromString(exe)
+	if err != nil {
+		return
+	}
+	var hwnd uintptr
+	for i := 0; i < 40 && hwnd == 0; i++ { // up to ~2s
+		if hwnd = ourWindow(); hwnd != 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if hwnd == 0 {
+		return
+	}
+	var big, small uintptr
+	if n, _, _ := pExtractIconEx.Call(uintptr(unsafe.Pointer(p)), 0,
+		uintptr(unsafe.Pointer(&big)), uintptr(unsafe.Pointer(&small)), 1); n == 0 {
+		return
+	}
+	if small != 0 {
+		pSendMessage.Call(hwnd, wmSetIcon, iconSmall, small) // title bar
+	}
+	if big != 0 {
+		pSendMessage.Call(hwnd, wmSetIcon, iconBig, big) // Alt-Tab / task switcher
+	}
 }
 
 // forceForeground restores (if minimized), raises and focuses the app window.

@@ -62,6 +62,11 @@ func Run(handler http.Handler, log *slog.Logger, onClose func()) error {
 			trayOK = ok
 			ctxMu.Unlock()
 		},
+		// Wails doesn't set a window icon, so the title bar shows the generic
+		// program icon — put our own there once the window/DOM exists.
+		OnDomReady: func(_ context.Context) {
+			go applyWindowIcon()
+		},
 		// Close (the X) hides to tray and keeps downloading in the background,
 		// rather than quitting — only a real Exit (tray menu / File → Exit) closes.
 		OnBeforeClose: func(ctx context.Context) bool {
