@@ -1,0 +1,1842 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/icons/appicon.png">
+<title>D BOX — Download Manager</title>
+<script>
+/* Apply persisted UI settings (theme / UI size / text size) BEFORE first paint
+   so the window never flashes the default look. Values live in localStorage;
+   the 🎨 UI panel (Developer mode) edits them. */
+(function () {
+  function get(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
+  var t = get("dbox.ui.theme", "");
+  if (t && t !== "graphite") document.documentElement.setAttribute("data-theme", t);
+  var z = +get("dbox.ui.zoom", "100") || 100;
+  if (z !== 100) document.documentElement.style.zoom = z / 100;
+  // Text size scales the px-based surfaces (list, menus, toolbar labels) plus
+  // the rem base. Injected as a style tag the UI panel rewrites live.
+  window.__applyTextSize = function (pct) {
+    var m = (+pct || 100) / 100;
+    var el = document.getElementById("uiTextStyle");
+    if (!el) { el = document.createElement("style"); el.id = "uiTextStyle"; document.head.appendChild(el); }
+    // !important: this tag is created pre-paint, BEFORE the parser reaches the
+    // main <style>, so with equal specificity the main sheet would win the
+    // cascade and the sliders would silently do nothing.
+    el.textContent = m === 1 ? "" :
+      "html{font-size:" + (13 * m).toFixed(1) + "px !important}" +
+      ".dtable{font-size:" + (11.5 * m).toFixed(1) + "px !important}" +
+      ".dtable thead th{font-size:" + (11 * m).toFixed(1) + "px !important}" +
+      ".dtable td{height:" + Math.round(21 * m) + "px !important}" +
+      ".menubar{font-size:" + (12 * m).toFixed(1) + "px !important}" +
+      ".tree{font-size:" + (12 * m).toFixed(1) + "px !important}" +
+      ".tb .tl{font-size:" + (10 * m).toFixed(1) + "px !important}" +
+      ".statusbar{font-size:" + (11 * m).toFixed(1) + "px !important}" +
+      ".dropdown{font-size:" + (12.5 * m).toFixed(1) + "px !important}" +
+      ".addbar input[type=url],.addbar select,.addbar button{font-size:" + (12 * m).toFixed(1) + "px !important}";
+  };
+  window.__applyTextSize(get("dbox.ui.text", "100"));
+})();
+</script>
+<style>
+  :root {
+    --bg: #3c4043;          /* window chrome (menubar / toolbar / padding) */
+    --bg2: #34383b;         /* slightly darker chrome accents */
+    --panel: #303336;       /* list / panels (dark gray, not black) */
+    --panel-2: #44484b;     /* raised surfaces / inputs */
+    --hover: #3f4448;       /* generic hover */
+    --border: #4e5256;
+    --grid: #3c4043;        /* listview gridlines (lighter than the list) */
+    --text: #e6e6e6;
+    --muted: #9aa0a4;
+    --sel: #3f5e80;         /* selection (muted steel blue) */
+    --selbd: #5a82ad;
+    --accent: #6aa6e6;
+    --green: #5cba6a;
+    --red: #e07a7a;
+    --yellow: #d8b24a;
+    --grad-a: #42474b;      /* chrome gradient (toolbar / buttons) */
+    --grad-b: #383c40;
+    --text-dim: #cfd2d4;    /* secondary chrome text (toolbar labels, headers) */
+    --text-strong: #fff;
+    --press: #4a5460;       /* pressed toolbar button */
+    --strike: #aab0b4;      /* skipped-row strikethrough line */
+    --pri-a: #3a8ee6;       /* primary (blue) button gradient */
+    --pri-b: #1f6fd0;
+    color-scheme: dark;
+    font-size: 13px;
+  }
+  /* ---- themes (UI settings panel; persisted in localStorage) ---- */
+  :root[data-theme=midnight] {
+    --bg: #22262d; --bg2: #1c2026; --panel: #181c22; --panel-2: #2b313a; --hover: #2a313b;
+    --border: #3a424d; --grid: #242931; --text: #dfe3e8; --muted: #8b939e;
+    --sel: #2d4a6b; --selbd: #4a79ab; --accent: #64a8f0;
+    --grad-a: #2b313a; --grad-b: #22272e; --text-dim: #b9c2cc; --press: #33404f; --strike: #97a1ad;
+  }
+  :root[data-theme=ocean] {
+    --bg: #1e2e37; --bg2: #18262d; --panel: #152229; --panel-2: #263a44; --hover: #264350;
+    --border: #345460; --grid: #21343e; --text: #dceef2; --muted: #86a4ad;
+    --sel: #20505f; --selbd: #3f8ba1; --accent: #4fc3d9;
+    --grad-a: #25424e; --grad-b: #1d343e; --text-dim: #b3ccd4; --press: #2b5666; --strike: #8fa9b1;
+    --pri-a: #2f9db5; --pri-b: #1f7285;
+  }
+  :root[data-theme=forest] {
+    --bg: #262e26; --bg2: #202720; --panel: #1c231c; --panel-2: #2f3a2f; --hover: #2e3b2e;
+    --border: #405040; --grid: #283228; --text: #e2e8e0; --muted: #93a093;
+    --sel: #35533a; --selbd: #5c8f63; --accent: #7cc47f;
+    --grad-a: #2e392e; --grad-b: #252e25; --text-dim: #c0cbbe; --press: #3a4b3a; --strike: #9aa79a;
+    --pri-a: #3f9e4f; --pri-b: #2e7c3c;
+  }
+  :root[data-theme=light] {
+    --bg: #e8eaed; --bg2: #dde0e4; --panel: #ffffff; --panel-2: #f1f3f5; --hover: #e4e8ee;
+    --border: #c3c9d0; --grid: #e4e7ea; --text: #1f2328; --muted: #6a7280;
+    --sel: #cfe3f8; --selbd: #7aa9dc; --accent: #1f6fd0;
+    --grad-a: #f6f7f8; --grad-b: #e7eaee; --text-dim: #4a5361; --text-strong: #000;
+    --press: #d5dae1; --strike: #9aa2ac;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", Tahoma, system-ui, sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+  }
+  input[type=checkbox] { accent-color: var(--accent); }
+  button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+    outline: 1px solid var(--accent); outline-offset: 1px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+
+  /* ---- menu bar ---- */
+  .menubar { display: flex; align-items: center; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 12px; flex: none; }
+  .applogo { width: 16px; height: 16px; margin: 0 6px 0 7px; flex: none; }
+  .menubar .m { padding: 4px 10px; cursor: default; position: relative; }
+  .menubar .m u { text-decoration: underline; }
+  .menubar .m:hover, .menubar .m.open { background: var(--hover); }
+
+  /* ---- toolbar ---- */
+  .toolbar { display: flex; align-items: stretch; gap: 1px; padding: 3px 5px;
+    background: linear-gradient(var(--grad-a), var(--grad-b)); border-bottom: 1px solid var(--border); flex: none; }
+  .tb { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    min-width: 50px; padding: 3px 7px 2px; border: 1px solid transparent; border-radius: 4px;
+    background: transparent; cursor: default; color: var(--text);
+    transition: background-color .12s, border-color .12s, transform .06s; }
+  .tb .ic { font-size: 18px; line-height: 1; }
+  .tb .tl { font-size: 10px; white-space: nowrap; color: var(--text-dim); }
+  .tb:hover { background: var(--hover); border-color: var(--selbd); }
+  .tb:active { background: var(--press); transform: scale(.96); }
+  .tb.dim { opacity: .55; }
+  .tb.active { background: var(--sel); border-color: var(--accent); }
+  .tbsep { width: 1px; background: var(--border); margin: 5px 4px; }
+
+  /* ---- main split ---- */
+  .layout { flex: 1; min-height: 0; display: flex; background: var(--bg); padding: 5px; gap: 5px; }
+  .sidebar { width: 190px; flex: none; background: var(--panel); border: 1px solid var(--border);
+    display: flex; flex-direction: column; min-height: 0; }
+  body.cats-collapsed .sidebar { display: none; }
+  .cattitle { display: flex; align-items: center; padding: 5px 8px; font-size: 12px; color: var(--text-dim);
+    background: var(--bg2); border-bottom: 1px solid var(--border); }
+  .cattitle .x { margin-left: auto; cursor: default; color: var(--muted); padding: 0 3px; }
+  .cattitle .x:hover { color: var(--red); }
+  .tree { flex: 1; overflow-y: auto; padding: 3px 2px; font-size: 12px; }
+
+  .trow { display: flex; align-items: center; gap: 5px; padding: 2px 6px; cursor: default; white-space: nowrap;
+    transition: background-color .1s; }
+  .trow:hover { background: var(--hover); }
+  .grabrow { transition: background-color .1s; }
+  .grabrow:hover { background: var(--hover); }
+  .trow.active { background: var(--sel); box-shadow: inset 0 0 0 1px var(--selbd); }
+  .trow .tw { width: 12px; text-align: center; font-size: 9px; color: var(--muted); cursor: default; }
+  .trow .tico { width: 17px; text-align: center; flex: none; }
+  .trow .tlbl { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .trow .tcnt { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .trow.child { padding-left: 24px; }
+  .tnode.collapsed .tchildren { display: none; }
+
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0;
+    background: var(--panel); border: 1px solid var(--border); }
+
+  /* ---- downloads listview ---- */
+  .tablewrap { flex: 1; overflow: auto; }
+  .dtable { width: 100%; min-width: 700px; border-collapse: collapse; table-layout: fixed; font-size: 11.5px; }
+  .dtable thead th {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--bg2); color: var(--text-dim);
+    text-align: center; font-weight: 600; font-size: 11px;
+    padding: 4px 7px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    cursor: default; white-space: nowrap;
+  }
+  .dtable thead th:hover { background: var(--hover); }
+  .dtable thead th.sorted { color: var(--accent); }
+  .dtable thead th .arr { font-size: 9px; margin-left: 3px; }
+  .dtable td.num { font-variant-numeric: tabular-nums; }
+  /* Every column's header + data is centered for a tidy line-up; only the wide
+     File Name column stays left-aligned. */
+  .dtable thead th.c-name, .dtable td.c-name { text-align: left; }
+  .dtable td {
+    padding: 0 7px; height: 21px; border-right: 1px solid var(--grid); border-bottom: 1px solid var(--grid);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); text-align: center;
+  }
+  .dtable tr.row:hover td { background-color: var(--hover); }
+  .dtable tr.row.selected td { background-color: var(--sel); }
+  .dtable tr.row.selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+  .c-q { width: 24px; text-align: center; color: var(--muted); }
+  .c-size { width: 68px; }
+  .c-status { width: 78px; }
+  .c-eta { width: 56px; color: var(--muted); }
+  .c-date { width: 86px; color: var(--muted); }
+  .c-desc { width: 104px; color: var(--muted); }
+  .c-name .ic { margin-right: 7px; }
+  /* Emoji glyph icons sit in the same fixed 16px slot as real <img> icons, so a
+     narrow glyph (🗜 for .7z etc.) lines up centered instead of hugging the left. */
+  .c-name span.ic { display: inline-block; width: 16px; text-align: center; vertical-align: -1px; }
+  .icimg { width: 16px; height: 16px; vertical-align: -4px; object-fit: contain; }
+  .catimg { width: 15px; height: 15px; vertical-align: -3px; object-fit: contain; }
+  td.c-status .st.failed { color: var(--red); font-weight: 600; }
+  td.c-status .st.downloading { color: var(--accent); font-weight: 600; }
+  td.c-status .st.scheduled { color: var(--yellow); font-weight: 600; }
+  /* A skipped Download-Later row: a 🚫 tag on the file + a continuous line drawn
+     through the middle of every cell (the per-cell center lines abut into one
+     line across the row). Visible even when the row is selected, since the line
+     is a background-image painted over the selection background-color. */
+  tr.row.skip td { color: var(--muted);
+    background-image: linear-gradient(to bottom, transparent calc(50% - 1px), var(--strike) calc(50% - 1px), var(--strike) calc(50% + 1px), transparent calc(50% + 1px)); }
+  tr.row.skip td.c-name { opacity: .72; }
+  tr.row.skip td.c-name .ic, tr.row.skip td.c-name .icimg { opacity: .4; }
+  tr.row.skip .skipmark { color: var(--red); margin-right: 5px; font-size: 12px; vertical-align: -1px; }
+  tr.row.skip td.c-status .st { color: #b9bdc0; }
+  .emptyrow td { text-align: center; color: var(--muted); padding: 42px 0; height: auto; border-right: 0; }
+  .emptyrow .eglyph { font-size: 34px; opacity: .35; margin-bottom: 8px; }
+
+  /* ---- status bar ---- */
+  .statusbar { display: flex; align-items: center; gap: 12px; padding: 2px 11px; font-size: 11px;
+    color: var(--muted); background: var(--bg); border-top: 1px solid var(--border); flex: none; }
+  .statusbar .spd { margin-left: auto; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+  /* ---- floating dropdown (menus) ---- */
+  .dropdown { position: fixed; display: none; z-index: 1600; min-width: 180px; padding: 4px;
+    background: var(--bg2); color: var(--text); border: 1px solid var(--border); border-radius: 4px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5); font-size: 12.5px; animation: menupop .1s ease-out; }
+  @keyframes menupop { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+  .dropdown .di { padding: 6px 12px; border-radius: 4px; cursor: default; display: flex; gap: 9px; align-items: center;
+    transition: background-color .09s; }
+  .dropdown .di:hover { background: var(--hover); }
+  .dropdown .di.danger { color: var(--red); }
+  .dropdown .di.danger:hover { background: rgba(224,122,122,.18); }
+  .dropdown .di .k { width: 16px; text-align: center; }
+  .dropdown .sep { height: 1px; background: var(--border); margin: 4px 6px; }
+
+  #toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: #2c2c2c; color: #fff; border-radius: 8px; opacity: 0;
+    padding: 9px 16px; font-size: 12.5px; transition: transform .25s, opacity .25s; max-width: 80vw; z-index: 2000;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  /* ---- in-page dialog iframe (New Download / status) ---- */
+  #dlgModal .dlgframe { border: 0; border-radius: 8px; background: var(--bg2);
+    box-shadow: 0 24px 70px rgba(0,0,0,.6); width: 640px; height: 470px;
+    max-width: 95vw; max-height: 94vh; }
+  /* ---- modals ---- */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5);
+    display: none; align-items: center; justify-content: center; z-index: 1800; }
+  .modal-backdrop.show { display: flex; animation: bfade .15s ease-out; }
+  @keyframes bfade { from { background: rgba(0,0,0,0); } to { background: rgba(0,0,0,.5); } }
+  .modal { width: 430px; max-width: 92vw; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 16px 50px rgba(0,0,0,.55); overflow: hidden; animation: pop .14s ease-out; }
+  @keyframes pop { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .modal .mhead { display: flex; align-items: center; gap: 11px; padding: 15px 18px 4px; }
+  .modal .mhead .ok { width: 32px; height: 32px; border-radius: 50%; flex: none; font-size: 17px;
+    background: rgba(46,158,79,.14); color: var(--green); display: grid; place-items: center; }
+  .modal .mhead .ok.edit { background: rgba(31,111,208,.14); color: var(--accent); }
+  .modal .mhead .ttl { font-size: 1.02rem; font-weight: 650; }
+  .modal .mbody { padding: 6px 18px 14px; }
+  .modal .fname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modal .fmeta { color: var(--muted); font-size: .8rem; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modal .mactions { display: flex; gap: 8px; padding: 0 18px 14px; }
+  .modal .mactions button { flex: 1; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--text); font-size: .88rem; cursor: pointer;
+    transition: border-color .12s, filter .12s; }
+  .modal .mactions button:active { filter: brightness(.88); }
+  .modal .mactions button:hover { border-color: var(--accent); }
+  .modal .mactions button:disabled { opacity: .45; cursor: not-allowed; }
+  .modal .mactions button.primary { background: linear-gradient(var(--pri-a), var(--pri-b)); border: 0; color: #fff; font-weight: 600; }
+  .modal .mactions button.primary:disabled { filter: grayscale(.6); }
+  .modal .mfoot { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 18px; border-top: 1px solid var(--border); background: var(--panel-2); }
+  .modal .mfoot label { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: .8rem; cursor: pointer; }
+  .modal .mfoot .more { color: var(--muted); font-size: .78rem; }
+  .modal .rninput { width: 100%; padding: 9px 11px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font-size: .92rem; outline: none; }
+  .modal .rninput:focus { border-color: var(--accent); }
+  .modal .about { padding: 4px 18px 16px; font-size: 12.5px; color: var(--text); line-height: 1.6; }
+  .modal .about b { color: var(--text-strong); }
+  /* ---- UI settings panel (Developer mode) ---- */
+  .swatches { display: flex; gap: 9px; flex-wrap: wrap; margin: 4px 0 2px; }
+  .swatch { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 7px 9px 6px;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--panel); cursor: pointer;
+    font-size: .74rem; color: var(--muted); min-width: 64px; transition: border-color .12s; }
+  .swatch:hover { border-color: var(--accent); }
+  .swatch.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--text); }
+  .swatch .dot2 { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(128,128,128,.45); }
+  .uirow { display: flex; align-items: center; gap: 10px; margin: 12px 0 2px; }
+  .uirow > span.lbl { width: 70px; flex: none; color: var(--muted); }
+  .uirow input[type=range] { flex: 1; accent-color: var(--accent); }
+  .uirow .val { width: 44px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* compact confirm dialog (replaces the browser's confirm bar) */
+  #confirmModal { z-index: 1900; } /* stacks above Options/Scheduler backdrops */
+  .modal.confirm { width: 350px; }
+  .modal.confirm .cbody { display: flex; align-items: flex-start; gap: 11px; padding: 16px 18px 14px; }
+  .modal.confirm .ok.warn { width: 30px; height: 30px; font-size: 15px;
+    background: rgba(216,178,74,.15); color: var(--yellow); border-radius: 50%; flex: none;
+    display: grid; place-items: center; }
+  .modal.confirm .cmsg { font-size: 12.5px; line-height: 1.5; padding-top: 5px; overflow-wrap: break-word; min-width: 0; }
+  .modal.confirm .mactions button { padding: 7px 10px; font-size: .84rem; }
+  .modal.confirm button.dangerbtn { background: linear-gradient(#c96a6a,#a94f4f); border: 0; color: #fff; font-weight: 600; }
+
+  /* the add-url bar lives in a thin band under the toolbar */
+  .addbar { display: flex; gap: 6px; padding: 5px 7px; background: var(--bg); border-bottom: 1px solid var(--border); flex: none; }
+  .addbar input[type=url] { flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 8px; font-size: 12px; background: var(--panel); color: var(--text); outline: none; }
+  .addbar input[type=url]:focus { border-color: var(--accent); }
+  .addbar input[type=url]::placeholder { color: var(--muted); }
+  .addbar select { border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); font-size: 12px; padding: 0 4px; }
+  .addbar button { border: 1px solid var(--border); border-radius: 4px; background: linear-gradient(var(--grad-a), var(--grad-b));
+    color: var(--text); font-size: 12px; padding: 4px 11px; cursor: pointer; white-space: nowrap;
+    transition: border-color .12s, filter .12s; }
+  .addbar button:hover { border-color: var(--accent); background: var(--hover); }
+  .addbar button:active { filter: brightness(.88); }
+  .addbar button.primary { background: linear-gradient(var(--pri-a),var(--pri-b)); border-color: var(--pri-b); color: #fff; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="menubar" id="menubar"></div>
+  <div class="toolbar" id="toolbar"></div>
+
+  <form class="addbar" id="addForm">
+    <input type="url" id="urlInput" placeholder="Paste a download URL (http/https)…" required>
+    <select id="catSelect" title="category"></select>
+    <select id="segSelect" title="connections">
+      <option value="0">auto</option>
+      <option>1</option><option>2</option><option>4</option><option>8</option><option>16</option>
+    </select>
+    <button type="button" id="saveAsBtn" title="Choose folder/name before downloading">Save as…</button>
+    <button type="submit" id="addBtn" class="primary">Add</button>
+  </form>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="cattitle">Categories <span class="x" id="catClose" title="Hide">✕</span></div>
+      <div class="tree" id="sidebar"></div>
+    </aside>
+    <div class="main">
+      <div class="tablewrap">
+        <table class="dtable">
+          <thead><tr id="thead">
+            <th data-sort="name"   class="c-name">File Name</th>
+            <th data-sort="q"      class="c-q">Q</th>
+            <th data-sort="size"   class="c-size num">Size</th>
+            <th data-sort="status" class="c-status">Status</th>
+            <th data-sort="eta"    class="c-eta">Time left</th>
+            <th data-sort="date"   class="c-date">Last Try Date</th>
+            <th data-sort="desc"   class="c-desc">Description</th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar"><span id="sbLeft"></span><span class="spd" id="totalSpeed">0 B/s</span></div>
+
+<div class="dropdown" id="dropdown"></div>
+<div class="dropdown" id="ctxmenu"></div>
+
+<div class="modal-backdrop" id="doneModal">
+  <div class="modal">
+    <div class="mhead"><div class="ok">&#10003;</div><div class="ttl">Download complete</div></div>
+    <div class="mbody"><div class="fname" id="dmName"></div><div class="fmeta" id="dmMeta"></div></div>
+    <div class="mactions">
+      <button class="primary" id="dmOpen">&#10515; Open file</button>
+      <button id="dmFolder">&#128193; Open folder</button>
+      <button id="dmClose">Close</button>
+    </div>
+    <div class="mfoot">
+      <label><input type="checkbox" id="dmSuppress"> Don't show this for 2 hours</label>
+      <span class="more" id="dmMore"></span>
+    </div>
+  </div>
+</div>
+
+<!-- UI settings (Developer mode): theme, UI size, text size. -->
+<div class="modal-backdrop" id="uiModal">
+  <div class="modal" style="width: 470px; max-width: 94vw;">
+    <div class="mhead"><div class="ok edit">&#127912;</div><div class="ttl">UI settings</div></div>
+    <div class="mbody">
+      <div style="color:var(--muted); font-size:.78rem; margin-bottom:6px;">Theme (applies to every window):</div>
+      <div class="swatches" id="uiThemes"></div>
+      <div class="uirow">
+        <span class="lbl">UI size</span>
+        <input type="range" id="uiZoom" min="80" max="150" step="5">
+        <span class="val" id="uiZoomVal"></span>
+      </div>
+      <div class="uirow">
+        <span class="lbl">Text size</span>
+        <input type="range" id="uiText" min="85" max="130" step="5">
+        <span class="val" id="uiTextVal"></span>
+      </div>
+      <div style="color:var(--muted); font-size:.74rem; margin-top:10px;">UI &amp; text size apply to the main window; changes save instantly.</div>
+    </div>
+    <div class="mfoot">
+      <button id="uiReset" style="padding:7px 12px; border-radius:5px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); cursor:pointer;">Reset to defaults</button>
+      <button class="primary" id="uiClose" style="padding:7px 16px; border-radius:6px; border:0; color:#fff; font-weight:600; background:linear-gradient(var(--pri-a),var(--pri-b)); cursor:pointer;">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- App-styled replacement for the browser's confirm() (no "127.0.0.1 says"). -->
+<div class="modal-backdrop" id="confirmModal">
+  <div class="modal confirm">
+    <div class="cbody"><div class="ok warn">&#9888;</div><div class="cmsg" id="cfMsg"></div></div>
+    <div class="mactions"><button id="cfOk" class="dangerbtn">OK</button><button id="cfCancel">Cancel</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="renameModal">
+  <div class="modal">
+    <div class="mhead"><div class="ok edit">&#9998;</div><div class="ttl">Rename file</div></div>
+    <div class="mbody"><input type="text" id="rnInput" class="rninput" spellcheck="false" autocomplete="off"></div>
+    <div class="mactions"><button class="primary" id="rnSave">Save</button><button id="rnCancel">Cancel</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="aboutModal">
+  <div class="modal">
+    <div class="mhead"><div class="ok edit">&#10515;</div><div class="ttl">About D BOX</div></div>
+    <div class="about">
+      <b>D BOX</b> <span id="abVersion" style="color:var(--muted);font-weight:400;"></span> — your own segmented download manager.<br>
+      Multi-connection downloads, pause/resume, crash recovery, yt-dlp video, browser capture.<br>
+      Built to look &amp; feel like Internet Download Manager.
+    </div>
+    <div class="mactions"><button id="abCheck">Check for updates</button><button class="primary" id="abClose">OK</button></div>
+  </div>
+</div>
+
+<!-- Update-available prompt (shown on startup when a newer build exists, and
+     from Help → Check for updates). One-click download+swap+restart. -->
+<div class="modal-backdrop" id="updModal">
+  <div class="modal" style="width: 430px;">
+    <div class="mhead"><div class="ok edit">&#8681;</div><div class="ttl" id="updTitle">Update available</div></div>
+    <div class="mbody">
+      <div id="updSub" style="font-weight:600; margin-bottom:6px;"></div>
+      <div id="updNotes" style="color:var(--muted); font-size:.85rem; white-space:pre-wrap; max-height:180px; overflow:auto;"></div>
+      <div id="updProgWrap" style="display:none; margin-top:12px;">
+        <div style="height:10px; border-radius:5px; background:var(--panel-2); border:1px solid var(--border); overflow:hidden;">
+          <div id="updBar" style="height:100%; width:0; background:linear-gradient(var(--pri-a),var(--pri-b)); transition:width .2s;"></div>
+        </div>
+        <div id="updPhase" style="color:var(--muted); font-size:.78rem; margin-top:5px;"></div>
+      </div>
+    </div>
+    <div class="mactions">
+      <button class="primary" id="updNow">Update now</button>
+      <button id="updLater">Later</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="optionsModal">
+  <div class="modal" style="width: 580px; max-width: 94vw;">
+    <div class="mhead"><div class="ok edit">&#9881;</div><div class="ttl">Settings — Download folders</div></div>
+    <div class="mbody">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+        <span style="color:var(--muted); width:96px; flex:none;">Base folder</span>
+        <span id="optBase" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:var(--panel); border:1px solid var(--border); border-radius:5px; padding:6px 9px; font-size:.84rem;"></span>
+        <button id="optBaseBrowse" style="flex:none; padding:6px 11px; border-radius:5px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); cursor:pointer;">Browse…</button>
+      </div>
+      <div style="color:var(--muted); font-size:.76rem; margin:3px 0 11px;">New downloads are saved here, sorted into category subfolders. Existing files aren't moved.</div>
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+        <span style="color:var(--muted); width:96px; flex:none;">Max at once</span>
+        <input type="number" id="optConc" min="1" max="16" step="1" style="width:70px; padding:6px 9px; border-radius:5px; border:1px solid var(--border); background:var(--panel); color:var(--text); font:inherit;">
+        <span style="color:var(--muted); font-size:.76rem;">downloads running simultaneously (1 = one at a time)</span>
+      </div>
+      <div style="color:var(--muted); font-size:.76rem; margin:3px 0 11px;">Also controls how many “Download Later” items run at once when you click Start All.</div>
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:4px; cursor:pointer;">
+        <input type="checkbox" id="optShutdown">
+        <span>Turn off the PC when all downloads finish</span>
+      </label>
+      <div style="color:var(--muted); font-size:.76rem; margin:3px 0 11px;">Waits for the whole queue — a Start All batch or a playlist — to finish, then shuts down after a 60-second warning you can cancel. Resets each time you restart D BOX.</div>
+      <label style="display:flex; align-items:center; gap:8px; margin-bottom:4px; cursor:pointer;">
+        <input type="checkbox" id="optDev">
+        <span>Developer mode</span>
+      </label>
+      <div style="color:var(--muted); font-size:.76rem; margin:3px 0 11px;">Shows the Preview and &#127912; UI toolbar icons — the UI panel changes theme, UI size and text size.</div>
+      <div style="color:var(--muted); font-size:.76rem; margin-bottom:4px;">Per-category folders (Browse to pin one — it stays even if you change the base):</div>
+      <div id="optCats" style="display:flex; flex-direction:column; gap:5px; max-height:240px; overflow:auto;"></div>
+    </div>
+    <div class="mfoot">
+      <button id="optReset" style="padding:7px 12px; border-radius:5px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); cursor:pointer;">Reset to defaults</button>
+      <button class="primary" id="optClose" style="padding:7px 16px; border-radius:6px; border:0; color:#fff; font-weight:600; background:linear-gradient(var(--pri-a),var(--pri-b)); cursor:pointer;">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="schedModal">
+  <div class="modal" style="width: 580px; max-width: 94vw;">
+    <div class="mhead"><div class="ok edit">&#9200;</div><div class="ttl">Scheduler</div></div>
+    <div class="mbody">
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span style="color:var(--muted); flex:none;">Start selected at</span>
+        <input type="datetime-local" id="schedWhen" style="flex:1; min-width:170px; padding:6px 9px; border-radius:5px; border:1px solid var(--border); background:var(--panel); color:var(--text); font:inherit; color-scheme:dark;">
+        <button id="schedAdd" style="flex:none; padding:7px 14px; border-radius:6px; border:0; color:#fff; font-weight:600; background:linear-gradient(var(--pri-a),var(--pri-b)); cursor:pointer;">Schedule selected</button>
+      </div>
+      <div id="schedSelInfo" style="color:var(--muted); font-size:.76rem; margin:6px 0 12px;"></div>
+      <div style="color:var(--muted); font-size:.76rem; margin-bottom:5px;">Scheduled downloads (start automatically at their time):</div>
+      <div id="schedList" style="display:flex; flex-direction:column; gap:5px; max-height:240px; overflow:auto;"></div>
+    </div>
+    <div class="mfoot">
+      <button class="primary" id="schedClose" style="padding:7px 16px; border-radius:6px; border:0; color:#fff; font-weight:600; background:linear-gradient(var(--pri-a),var(--pri-b)); cursor:pointer;">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="plModal">
+  <div class="modal" style="width: 640px; max-width: 94vw;">
+    <div class="mhead"><div class="ok edit">&#9654;</div><div class="ttl">YouTube playlist</div></div>
+    <div class="mbody">
+      <div id="plTitle" style="font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>
+      <div style="display:flex; align-items:center; gap:10px; margin:6px 0 8px; flex-wrap:wrap;">
+        <span id="plCount" style="color:var(--muted); font-size:.82rem;"></span>
+        <span style="flex:1;"></span>
+        <a href="#" id="plSelAll" style="font-size:.8rem;">Select all</a>
+        <a href="#" id="plSelNone" style="font-size:.8rem;">Select none</a>
+      </div>
+      <div id="plList" style="display:flex; flex-direction:column; gap:2px; max-height:320px; overflow:auto; border:1px solid var(--border); border-radius:5px; padding:4px;"></div>
+      <div style="display:flex; gap:16px; margin-top:10px; flex-wrap:wrap;">
+        <label style="display:flex; align-items:center; gap:7px;"><input type="checkbox" id="plAudio"> Audio only (MP3)</label>
+        <label style="display:flex; align-items:center; gap:7px;"><input type="checkbox" id="plLater"> Add to “Download Later” instead of starting now</label>
+      </div>
+    </div>
+    <div class="mactions">
+      <button class="primary" id="plGo">Download selected</button>
+      <button id="plOne">Just this video</button>
+      <button id="plCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="grabModal">
+  <div class="modal" style="width: 620px; max-width: 94vw;">
+    <div class="mhead"><div class="ok edit">&#128279;</div><div class="ttl">Grab links</div></div>
+    <div class="mbody">
+      <div id="grabPasteWrap">
+        <div style="color:var(--muted); font-size:.8rem; margin-bottom:6px;">Paste a page's text/HTML below (or a list of links) — every download link in it will be found.</div>
+        <textarea id="grabText" rows="7" placeholder="Paste here (Ctrl+V)…" spellcheck="false"
+          style="width:100%; resize:vertical; padding:8px 9px; border-radius:5px; border:1px solid var(--border); background:var(--panel); color:var(--text); font:12px/1.4 ui-monospace,Consolas,monospace;"></textarea>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button id="grabPasteBtn" style="padding:6px 12px; border-radius:5px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); cursor:pointer;">Paste from clipboard</button>
+          <button class="primary" id="grabFind" style="padding:6px 14px; border-radius:6px; border:0; color:#fff; font-weight:600; background:linear-gradient(var(--pri-a),var(--pri-b)); cursor:pointer;">Find links</button>
+        </div>
+      </div>
+      <div id="grabResultWrap" style="display:none;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;">
+          <span id="grabSummary" style="font-weight:600;"></span>
+          <span style="flex:1;"></span>
+          <label style="display:flex; align-items:center; gap:5px; font-size:.8rem; color:var(--muted); cursor:pointer;"><input type="checkbox" id="grabOnlyFiles" checked> Only recognized file links</label>
+          <a href="#" id="grabSelAll" style="font-size:.8rem;">Select all</a>
+          <a href="#" id="grabSelNone" style="font-size:.8rem;">Select none</a>
+        </div>
+        <div id="grabList" style="display:flex; flex-direction:column; gap:2px; max-height:300px; overflow:auto; border:1px solid var(--border); border-radius:5px; padding:4px;"></div>
+        <label style="display:flex; align-items:center; gap:7px; margin-top:10px;"><input type="checkbox" id="grabLater"> Add to “Download Later” instead of starting now</label>
+      </div>
+    </div>
+    <div class="mactions">
+      <button class="primary" id="grabAdd" style="display:none;">Add selected</button>
+      <button id="grabBack" style="display:none;">Back</button>
+      <button id="grabCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- In-page dialog host (single-window / Wails): the New Download and status
+     pages load in this iframe instead of separate OS windows. -->
+<div class="modal-backdrop" id="dlgModal">
+  <iframe id="dlgFrame" class="dlgframe" title="D BOX dialog"></iframe>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+let tasks = [];
+let filter = "all";
+let categories = [];
+let dirToCat = {};
+let extMap = {}; // file extension ("zip") -> category name ("Compressed"), from the server
+let selectedIds = new Set(); // multi-selection (Windows-style ctrl/shift click)
+let anchorId = null;         // shift-range anchor
+let shownTasks = [];         // currently displayed (filtered+sorted) rows, for range math
+let es = null;
+let allExpanded = true;
+let serverGUI = false;   // true when D BOX runs as a native app (it pops its own completion window)
+const SORT = { key: "date", dir: -1 };
+
+const CAT_ICON = {
+  General: "\u{1F4C1}", Compressed: "\u{1F5DC}", Documents: "\u{1F4C4}", Music: "\u{1F3B5}",
+  Video: "\u{1F3AC}", Programs: "⚙️", Images: "\u{1F5BC}️"
+};
+const ACTIVE = ["downloading", "queued", "scheduled", "paused", "failed"];
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function humanBytes(n) {
+  if (n == null || n < 0) return "?";
+  const u = ["B","KB","MB","GB","TB"]; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(n >= 100 || i === 0 ? 0 : 1) + " " + u[i];
+}
+function humanSpeed(bps) { return humanBytes(bps) + "/s"; }
+function humanETA(s) {
+  if (s == null || s < 0 || !isFinite(s) || s > 359999) return ""; // hide bogus ETAs (stalled/near-0 speed)
+  s = Math.round(s);
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s/60) + "m " + (s%60) + "s";
+  return Math.floor(s/3600) + "h " + Math.floor((s%3600)/60) + "m";
+}
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function humanDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const hh = String(d.getHours()).padStart(2,"0"), mm = String(d.getMinutes()).padStart(2,"0");
+  return `${MON[d.getMonth()]} ${String(d.getDate()).padStart(2,"0")} ${hh}:${mm}`;
+}
+function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./,""); } catch { return ""; } }
+
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 3500);
+}
+async function api(method, path, body) {
+  const res = await fetch(path, { method, headers: body ? {"Content-Type":"application/json"} : undefined,
+    body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+function copyText(s) { try { navigator.clipboard.writeText(s); toast("Address copied"); } catch { toast("Copy failed"); } }
+
+// ---- categories ----------------------------------------------------------
+const normDir = (d) => String(d || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+const categoryOf = (t) => dirToCat[normDir(t.dir)] || "General";
+const catIcon = (name) => CAT_ICON[name] || "\u{1F4C1}";
+// Categories with a custom raster icon (used everywhere a category icon shows:
+// the sidebar tree, the Options list, and table rows) instead of the emoji glyph.
+const CAT_IMG = { Images: "/icons/picture.png", Video: "/icons/video.png", Compressed: "/icons/compress.png" };
+// Categories whose artwork OVERRIDES even a completed file's real shell icon —
+// pictures & videos always show their own artwork. Compressed is NOT here: a
+// finished archive still shows its real handler icon (WinRAR/7-Zip); the compress
+// artwork is only its category/in-progress glyph.
+const CAT_IMG_ALWAYS = new Set(["Images", "Video"]);
+// HTML form of a category icon: a small <img> when the category has custom
+// artwork, otherwise the plain emoji glyph.
+const catIconHTML = (name) => CAT_IMG[name] ? `<img class="catimg" src="${CAT_IMG[name]}" alt="">` : catIcon(name);
+// A download row's file icon: pictures/videos always use their custom artwork;
+// any other completed file uses the REAL Windows shell icon (the app's own icon
+// for an .exe, the default associated app's for others — WinRAR for archives,
+// etc.); in-progress / no-file rows use the category artwork (Compressed) or its
+// emoji. The server 404s archives with only the generic Windows handler, so
+// onerror falls back to the category icon.
+function rowIconHTML(t, cat) {
+  if (CAT_IMG_ALWAYS.has(cat)) return `<img class="ic icimg" src="${CAT_IMG[cat]}" alt="">`;
+  if (t.status === "completed" && t.filePath) {
+    return `<img class="ic icimg" src="/api/icon?path=${encodeURIComponent(t.filePath)}" alt="" onerror="iconFallback(this,'${cat}')">`;
+  }
+  if (CAT_IMG[cat]) return `<img class="ic icimg" src="${CAT_IMG[cat]}" alt="">`;
+  return `<span class="ic">${catIcon(cat)}</span>`;
+}
+function iconFallback(img, cat) {
+  // A completed archive whose real handler icon 404'd (generic-only handler)
+  // falls back to the compress artwork rather than the emoji.
+  if (CAT_IMG[cat]) { img.onerror = null; img.src = CAT_IMG[cat]; return; }
+  const s = document.createElement("span"); s.className = "ic"; s.textContent = catIcon(cat);
+  img.replaceWith(s);
+}
+
+async function loadCategories() {
+  try {
+    const data = await api("GET", "/api/categories");
+    categories = data.categories || [];
+    extMap = data.extMap || {};
+    serverGUI = !!data.gui;
+    dirToCat = {};
+    for (const c of categories) dirToCat[normDir(c.dir)] = c.name;
+    const sel = $("#catSelect"); sel.innerHTML = "";
+    for (const c of categories) {
+      const o = document.createElement("option"); o.value = c.name; o.textContent = c.name; sel.appendChild(o);
+    }
+  } catch (_) {}
+  render(); // re-render the TABLE too: rows need dirToCat for their category icons
+}
+
+function counts() {
+  const c = { all: tasks.length, unfinished: 0, finished: 0, later: 0, cat: {} };
+  for (const t of tasks) {
+    if (t.later && t.status !== "completed") c.later++;          // the Download Later queue
+    else if (ACTIVE.includes(t.status)) c.unfinished++;          // keep the two views distinct
+    if (t.status === "completed") c.finished++;
+    const k = categoryOf(t); c.cat[k] = (c.cat[k] || 0) + 1;
+  }
+  return c;
+}
+function trow(key, ico, lbl, n, cls, arrow) {
+  const active = filter === key ? " active" : "";
+  const arr = arrow !== undefined ? `<span class="tw" data-toggle="1">${arrow}</span>` : `<span class="tw"></span>`;
+  return `<div class="trow${active} ${cls||""}" data-f="${esc(key)}">${arr}<span class="tico">${ico}</span><span class="tlbl">${esc(lbl)}</span><span class="tcnt">${n}</span></div>`;
+}
+function renderSidebar() {
+  const c = counts();
+  let kids = "";
+  for (const cat of categories) kids += trow("cat:" + cat.name, catIconHTML(cat.name), cat.name, c.cat[cat.name] || 0, "child");
+  let html = `<div class="tnode${allExpanded ? "" : " collapsed"}">`;
+  html += trow("all", "\u{1F4E5}", "All Downloads", c.all, "", allExpanded ? "▼" : "▶");
+  html += `<div class="tchildren">${kids}</div></div>`;
+  html += trow("unfinished", "⏳", "Unfinished", c.unfinished);
+  html += trow("finished", "✅", "Finished", c.finished);
+  html += trow("later", "\u{1F551}", "Download Later", c.later);
+  $("#sidebar").innerHTML = html;
+}
+
+// ---- sorting -------------------------------------------------------------
+const STATUS_RANK = { downloading: 0, queued: 1, scheduled: 2, paused: 3, failed: 4, completed: 5 };
+function sortVal(t, key) {
+  switch (key) {
+    case "name":   return (t.fileName || t.url || "").toLowerCase();
+    case "q":      return t.status === "downloading" ? (t.segments || []).length : -1;
+    case "size":   return t.size < 0 ? -1 : t.size;
+    case "status": return STATUS_RANK[t.status] ?? 9;
+    case "eta":    return (t.status === "downloading" && t.eta >= 0) ? t.eta : Infinity;
+    case "speed":  return t.status === "downloading" ? (t.speed || 0) : -1;
+    case "date":   return Date.parse(t.completedAt || t.createdAt) || 0;
+    case "desc":   return (t.description || hostOf(t.url)).toLowerCase();
+  }
+  return 0;
+}
+function compareTasks(a, b) {
+  const va = sortVal(a, SORT.key), vb = sortVal(b, SORT.key);
+  let c = (typeof va === "string") ? va.localeCompare(vb) : (va < vb ? -1 : va > vb ? 1 : 0);
+  if (c === 0) return -((Date.parse(a.completedAt||a.createdAt)||0) - (Date.parse(b.completedAt||b.createdAt)||0));
+  return c * SORT.dir;
+}
+function applySortHeader() {
+  document.querySelectorAll("#thead th").forEach(th => {
+    th.classList.toggle("sorted", th.dataset.sort === SORT.key);
+    const base = th.textContent.replace(/\s*[▲▼]$/, "").trimEnd();
+    th.textContent = base + (th.dataset.sort === SORT.key ? (SORT.dir > 0 ? " ▲" : " ▼") : "");
+  });
+}
+
+// ---- table ---------------------------------------------------------------
+function statusText(t) {
+  // Skip/Later tags only describe HELD items — a held task the user manually
+  // started must show its live download state, not the stale tag.
+  const held = t.status === "paused" || t.status === "failed";
+  if (t.later && t.skip && held) return "⏭️ Skipped";
+  if (t.later && held) return "🕑 Later";
+  switch (t.status) {
+    case "downloading": return t.progress >= 0 ? (t.progress*100).toFixed(1) + "%" : "Receiving…";
+    case "queued":      return "Queued";
+    case "scheduled":   return t.scheduledAt ? "⏰ " + humanDate(t.scheduledAt) : "Scheduled";
+    case "paused":      return t.progress >= 0 ? "Paused " + (t.progress*100).toFixed(0) + "%" : "Paused";
+    case "completed":   return t.fileExists ? "Complete" : "Complete*";
+    case "failed":      return "Error";
+  }
+  return t.status;
+}
+function progressFill(t) {
+  const p = t.progress >= 0 ? Math.min(100, t.progress*100) : 0;
+  if (t.status === "downloading") return `background:linear-gradient(90deg,rgba(92,186,106,.28) ${p}%,transparent ${p}%);`;
+  if (t.status === "paused" && p > 0) return `background:linear-gradient(90deg,rgba(154,160,164,.20) ${p}%,transparent ${p}%);`;
+  if (t.status === "failed" && p > 0) return `background:linear-gradient(90deg,rgba(224,122,122,.20) ${p}%,transparent ${p}%);`;
+  return "";
+}
+function rowHTML(t) {
+  const cat = categoryOf(t);
+  const size = t.size > 0 ? humanBytes(t.size) : (t.status === "completed" ? humanBytes(t.downloaded) : "");
+  const eta = t.status === "downloading" ? humanETA(t.eta) : "";
+  const q = t.status === "downloading" ? (t.segments || []).length : "";
+  const sel = selectedIds.has(t.id) ? " selected" : "";
+  const skip = t.skip ? " skip" : "";
+  const later = t.later ? " later" : "";
+  return `<tr class="row ${t.status}${sel}${skip}${later}" data-id="${t.id}" style="${progressFill(t)}">
+    <td class="c-name" title="${esc(t.fileName || t.url)}">${t.skip ? '<span class="skipmark" title="Will be skipped by Start All">\u{1F6AB}</span>' : ''}${rowIconHTML(t, cat)}${esc(t.fileName || "(resolving…)")}</td>
+    <td class="c-q">${q}</td>
+    <td class="c-size num">${size}</td>
+    <td class="c-status" title="${esc(t.status === 'failed' ? (t.error || '') : '')}"><span class="st ${t.status}">${esc(statusText(t))}</span></td>
+    <td class="c-eta">${eta}</td>
+    <td class="c-date">${esc(humanDate(t.completedAt || t.createdAt))}</td>
+    <td class="c-desc" title="${esc(t.description || t.url)}">${esc(t.description || hostOf(t.url))}</td>
+  </tr>`;
+}
+function filterFn(t) {
+  if (filter === "later") return t.later && t.status !== "completed";
+  if (filter === "unfinished") return ACTIVE.includes(t.status) && !t.later;
+  if (filter === "finished") return t.status === "completed";
+  if (filter.startsWith("cat:")) return categoryOf(t) === filter.slice(4);
+  return true;
+}
+function filterLabel() {
+  if (filter === "all") return "All Downloads";
+  if (filter === "unfinished") return "Unfinished";
+  if (filter === "finished") return "Finished";
+  if (filter === "later") return "Download Later";
+  if (filter.startsWith("cat:")) return filter.slice(4);
+  return "All";
+}
+function render() {
+  renderSidebar();
+  applySortHeader();
+  for (const id of [...selectedIds]) if (!tasks.some(t => t.id === id)) selectedIds.delete(id); // drop deleted
+  shownTasks = tasks.filter(filterFn).sort(compareTasks);
+  const shown = shownTasks;
+
+  let totalSpeed = 0, active = 0, only = null;
+  for (const t of tasks) if (t.status === "downloading") { totalSpeed += t.speed || 0; active++; only = t; }
+  // One active download → show its avg/max/min live; several → just the total.
+  $("#totalSpeed").textContent = (active === 1 && only)
+    ? `${humanSpeed(only.speed||0)}  ·  avg ${humanSpeed(only.speedAvg||0)}  ·  max ${humanSpeed(only.speedMax||0)}` +
+      (only.speedMin > 0 ? `  ·  min ${humanSpeed(only.speedMin)}` : "")
+    : humanSpeed(totalSpeed);
+  $("#sbLeft").textContent = `${filterLabel()} — ${shown.length} item${shown.length === 1 ? "" : "s"}${active ? `, ${active} downloading` : ""}`;
+
+  const rows = $("#rows");
+  rows.innerHTML = shown.length
+    ? shown.map(rowHTML).join("")
+    : `<tr class="emptyrow"><td colspan="7"><div class="eglyph">\u{1F4E5}</div>No downloads ${filter !== "all" ? "in this view" : "yet — paste a URL above to start"}.</td></tr>`;
+
+  if (schedOpen) renderScheduler(); // keep the open scheduler list in sync with live updates
+}
+
+// ---- Developer mode + UI settings (theme / UI size / text size) -----------
+// Dev mode (Options checkbox) reveals the Preview and 🎨 UI toolbar icons.
+// UI settings persist in localStorage and apply on every launch (the head
+// script applies them pre-paint); themes are picked up by the popup windows too.
+const lsGet = (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+const devMode = () => lsGet("dbox.dev", "0") === "1";
+const THEMES = [
+  { id: "graphite", name: "Graphite", a: "#3c4043", b: "#6aa6e6" },
+  { id: "midnight", name: "Midnight", a: "#22262d", b: "#64a8f0" },
+  { id: "ocean",    name: "Ocean",    a: "#1e2e37", b: "#4fc3d9" },
+  { id: "forest",   name: "Forest",   a: "#262e26", b: "#7cc47f" },
+  { id: "light",    name: "Light",    a: "#e8eaed", b: "#1f6fd0" },
+];
+function applyTheme(id) {
+  if (!id || id === "graphite") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", id);
+  lsSet("dbox.ui.theme", id);
+}
+function applyZoom(pct) {
+  document.documentElement.style.zoom = pct === 100 ? "" : String(pct / 100);
+  lsSet("dbox.ui.zoom", String(pct));
+}
+function applyText(pct) {
+  window.__applyTextSize(pct); // defined in the pre-paint head script
+  lsSet("dbox.ui.text", String(pct));
+}
+function renderUIPanel() {
+  const cur = lsGet("dbox.ui.theme", "graphite") || "graphite";
+  $("#uiThemes").innerHTML = THEMES.map(t => `
+    <div class="swatch${t.id === cur ? " active" : ""}" data-th="${t.id}">
+      <span class="dot2" style="background:linear-gradient(135deg,${t.a} 50%,${t.b} 50%);"></span>${t.name}
+    </div>`).join("");
+  const z = +lsGet("dbox.ui.zoom", "100") || 100, x = +lsGet("dbox.ui.text", "100") || 100;
+  $("#uiZoom").value = z; $("#uiZoomVal").textContent = z + "%";
+  $("#uiText").value = x; $("#uiTextVal").textContent = x + "%";
+}
+function openUI() { renderUIPanel(); $("#uiModal").classList.add("show"); }
+function closeUI() { $("#uiModal").classList.remove("show"); }
+$("#uiThemes").addEventListener("click", (e) => {
+  const sw = e.target.closest("[data-th]"); if (!sw) return;
+  applyTheme(sw.dataset.th); renderUIPanel();
+});
+$("#uiZoom").addEventListener("input", () => { const v = +$("#uiZoom").value; $("#uiZoomVal").textContent = v + "%"; applyZoom(v); });
+$("#uiText").addEventListener("input", () => { const v = +$("#uiText").value; $("#uiTextVal").textContent = v + "%"; applyText(v); });
+$("#uiReset").addEventListener("click", () => { applyTheme("graphite"); applyZoom(100); applyText(100); renderUIPanel(); toast("UI reset to defaults"); });
+$("#uiClose").addEventListener("click", closeUI);
+$("#uiModal").addEventListener("click", (e) => { if (e.target === $("#uiModal")) closeUI(); });
+
+// ---- app-styled confirm (replaces window.confirm) --------------------------
+// Promise<boolean>; okLabel names the destructive action ("Delete", "Exit"…).
+// Enter confirms (the OK button holds focus), Escape/backdrop/Cancel decline.
+let cfResolve = null;
+function askConfirm(msg, okLabel) {
+  return new Promise((resolve) => {
+    if (cfResolve) cfResolve(false); // a new ask supersedes an unanswered one
+    cfResolve = resolve;
+    $("#cfMsg").textContent = msg;
+    $("#cfOk").textContent = okLabel || "OK";
+    $("#confirmModal").classList.add("show");
+    $("#cfOk").focus();
+  });
+}
+function closeConfirm(val) {
+  $("#confirmModal").classList.remove("show");
+  const r = cfResolve; cfResolve = null;
+  if (r) r(!!val);
+}
+$("#cfOk").addEventListener("click", () => closeConfirm(true));
+$("#cfCancel").addEventListener("click", () => closeConfirm(false));
+$("#confirmModal").addEventListener("click", (e) => { if (e.target === $("#confirmModal")) closeConfirm(false); });
+
+// ---- task actions --------------------------------------------------------
+window.doPause  = (id) => api("POST", `/api/tasks/${id}/pause`).catch(e => toast(e.message));
+window.doResume = (id) => api("POST", `/api/tasks/${id}/resume`).catch(e => toast(e.message));
+window.doReveal = (id) => api("POST", `/api/tasks/${id}/reveal`).catch(e => toast(e.message));
+window.doOpen   = (id) => api("POST", `/api/tasks/${id}/open`).catch(e => toast(e.message));
+
+let renameId = null;
+window.doRename = (id) => {
+  const t = tasks.find(x => x.id === id); if (!t) return;
+  renameId = id; $("#rnInput").value = t.fileName || "";
+  $("#renameModal").classList.add("show"); $("#rnInput").focus(); $("#rnInput").select();
+};
+function closeRename() { $("#renameModal").classList.remove("show"); renameId = null; }
+$("#rnCancel").addEventListener("click", closeRename);
+$("#rnSave").addEventListener("click", async () => {
+  if (!renameId) return;
+  const name = $("#rnInput").value.trim();
+  if (!name) { toast("Enter a file name"); return; }
+  try { await api("POST", `/api/tasks/${renameId}/rename`, { name }); closeRename(); } catch (e) { toast(e.message); }
+});
+$("#rnInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#rnSave").click(); else if (e.key === "Escape") closeRename(); });
+$("#renameModal").addEventListener("click", (e) => { if (e.target === $("#renameModal")) closeRename(); });
+
+window.doMove = async (id) => {
+  const t = tasks.find(x => x.id === id); if (!t) return;
+  let dir;
+  if (typeof window.myidmPickFolder === "function") { try { dir = await window.myidmPickFolder(t.dir || ""); } catch { dir = ""; } }
+  else dir = prompt("Move to folder (full path):", t.dir || "");
+  if (!dir) return;
+  try { await api("POST", `/api/tasks/${id}/move`, { dir }); } catch (e) { toast(e.message); }
+};
+window.doDelete = async (id, removeFile, confirmFile) => {
+  const t = tasks.find(x => x.id === id);
+  const msg = confirmFile ? `Delete "${t?.fileName}" AND its file on disk?`
+    : (t?.status === "completed" ? `Remove "${t?.fileName}" from the list? (file stays on disk)` : `Cancel and remove "${t?.fileName || t?.url}"?`);
+  if (!await askConfirm(msg, confirmFile ? "Delete" : "Remove")) return;
+  api("DELETE", `/api/tasks/${id}?file=${removeFile && (confirmFile || t?.status !== "completed") ? 1 : 0}`).catch(e => toast(e.message));
+};
+
+// ---- toolbar / menu actions ----------------------------------------------
+const selectedTasks = () => shownTasks.filter(t => selectedIds.has(t.id));
+const selectedTask = () => { const s = selectedTasks(); return s.length ? s[0] : undefined; };
+async function deleteSelected(sel) {
+  if (!sel.length) return;
+  const msg = sel.length === 1
+    ? (sel[0].status === "completed" ? `Remove "${sel[0].fileName}" from the list? (file stays on disk)`
+                                     : `Cancel and remove "${sel[0].fileName || sel[0].url}"?`)
+    : `Remove ${sel.length} selected downloads from the list? (files stay on disk)`;
+  if (!await askConfirm(msg, "Remove")) return;
+  sel.forEach(t => api("DELETE", `/api/tasks/${t.id}?file=0`).catch(e => toast(e.message)));
+  selectedIds.clear();
+}
+function focusAdd() { $("#urlInput").focus(); $("#urlInput").select(); }
+function saveAs() { $("#saveAsBtn").click(); }
+function resumeAll() {
+  // Held "Download Later" items are excluded — they only start from their own
+  // view (Start / Start All), otherwise a blanket Resume would drain the queue.
+  const r = tasks.filter(t => (t.status === "paused" || t.status === "failed") && !t.later);
+  if (!r.length) { toast("Nothing to resume"); return; }
+  r.forEach(t => doResume(t.id));
+}
+function stopAll() {
+  const a = tasks.filter(t => t.status === "downloading" || t.status === "queued");
+  if (!a.length) { toast("Nothing is downloading"); return; }
+  a.forEach(t => doPause(t.id));
+}
+async function deleteCompleted() {
+  const done = tasks.filter(t => t.status === "completed");
+  if (!done.length) { toast("No completed downloads"); return; }
+  if (!await askConfirm(`Remove ${done.length} completed entr${done.length > 1 ? "ies" : "y"} from the list? (files stay on disk)`, "Remove")) return;
+  done.forEach(t => api("DELETE", `/api/tasks/${t.id}?file=0`).catch(() => {}));
+}
+function toggleSidebar() { document.body.classList.toggle("cats-collapsed"); }
+// Switch the active view; the toolbar swaps to the queue actions on "later".
+function setFilter(key) { filter = key; renderToolbar(); render(); }
+function showAbout() { $("#aboutModal").classList.add("show"); }
+$("#abClose").addEventListener("click", () => $("#aboutModal").classList.remove("show"));
+$("#aboutModal").addEventListener("click", (e) => { if (e.target === $("#aboutModal")) $("#aboutModal").classList.remove("show"); });
+$("#abCheck").addEventListener("click", () => { $("#aboutModal").classList.remove("show"); checkForUpdates(true); });
+
+// ---- self-update ----------------------------------------------------------
+// Checks the static latest.json (no server needed) and, on one click, downloads
+// the new build, swaps this exe and restarts. Runs once automatically at startup
+// and on demand from Help → Check for updates / the About dialog.
+let updRel = null, updPoll = null;
+function closeUpd() { $("#updModal").classList.remove("show"); if (updPoll) { clearInterval(updPoll); updPoll = null; } }
+async function checkForUpdates(interactive) {
+  try {
+    const r = await api("GET", "/api/update/check");
+    if (!r.enabled) { if (interactive) toast("Auto-update isn't configured for this build"); return; }
+    if (r.error) { if (interactive) toast("Update check failed: " + r.error); return; }
+    if (!r.available) { if (interactive) toast(`You're up to date (v${r.current})`); return; }
+    updRel = r;
+    $("#updTitle").textContent = "Update available";
+    $("#updSub").textContent = `D BOX v${r.latest} is available` + (r.current ? ` — you have v${r.current}` : "");
+    $("#updNotes").textContent = (r.notes || "") + (r.date ? `\n\nReleased ${r.date}` : "");
+    $("#updProgWrap").style.display = "none";
+    $("#updBar").style.width = "0";
+    $("#updNow").disabled = false;
+    $("#updLater").style.display = r.mandatory ? "none" : "";
+    $("#updModal").classList.add("show");
+  } catch (e) { if (interactive) toast("Update check failed: " + e.message); }
+}
+$("#updLater").addEventListener("click", closeUpd);
+$("#updModal").addEventListener("click", (e) => { if (e.target === $("#updModal") && $("#updLater").style.display !== "none") closeUpd(); });
+$("#updNow").addEventListener("click", async () => {
+  $("#updNow").disabled = true;
+  $("#updProgWrap").style.display = "";
+  $("#updPhase").textContent = "Starting…";
+  try { await api("POST", "/api/update/apply"); } catch (e) { toast("Update failed: " + e.message); $("#updNow").disabled = false; return; }
+  if (updPoll) clearInterval(updPoll);
+  updPoll = setInterval(async () => {
+    try {
+      const s = await api("GET", "/api/update/status");
+      const pct = s.total > 0 ? Math.min(100, Math.round(s.downloaded / s.total * 100)) : null;
+      if (s.phase === "downloading") { $("#updBar").style.width = (pct ?? 30) + "%"; $("#updPhase").textContent = pct != null ? `Downloading… ${pct}%` : "Downloading…"; }
+      else if (s.phase === "verifying") { $("#updBar").style.width = "92%"; $("#updPhase").textContent = "Verifying…"; }
+      else if (s.phase === "swapping") { $("#updBar").style.width = "96%"; $("#updPhase").textContent = "Installing…"; }
+      else if (s.phase === "restarting" || s.phase === "done") { $("#updBar").style.width = "100%"; $("#updPhase").textContent = "Restarting D BOX…"; }
+      else if (s.phase === "error") { clearInterval(updPoll); updPoll = null; $("#updPhase").textContent = "Failed: " + (s.error || "unknown"); $("#updNow").disabled = false; toast("Update failed: " + (s.error || "unknown")); }
+    } catch (_) { /* the app is restarting — the connection drop is expected */ }
+  }, 400);
+});
+
+// ---- Options: download folders -------------------------------------------
+let optState = null;
+async function openOptions() { $("#optionsModal").classList.add("show"); await loadOptions(); }
+function closeOptions() { $("#optionsModal").classList.remove("show"); }
+async function loadOptions() {
+  try { optState = await api("GET", "/api/settings"); renderOptions(); } catch (e) { toast(e.message); }
+}
+function renderOptions() {
+  if (!optState) return;
+  $("#optBase").textContent = optState.downloadDir || "";
+  $("#optBase").title = optState.downloadDir || "";
+  if (optState.maxConcurrent) $("#optConc").value = optState.maxConcurrent;
+  $("#optShutdown").checked = !!optState.shutdownWhenDone;
+  $("#optDev").checked = devMode();
+  const cats = optState.categories || {}, custom = optState.custom || {};
+  const names = Object.keys(cats).sort((a, b) => a === "General" ? -1 : b === "General" ? 1 : a.localeCompare(b));
+  $("#optCats").innerHTML = names.map(n => `
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span style="width:96px; flex:none; display:flex; align-items:center; gap:6px;"><span class="ic">${catIconHTML(n)}</span>${esc(n)}</span>
+      <span title="${esc(cats[n])}" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:.8rem;">${esc(cats[n])}${custom[n] ? ' <span style="color:var(--accent);">• pinned</span>' : ''}</span>
+      <button data-cat="${esc(n)}" style="flex:none; padding:5px 10px; border-radius:5px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); cursor:pointer; font-size:.8rem;">Browse…</button>
+    </div>`).join("");
+}
+async function pickFolder(initial) {
+  // native chooser via the server; "" if cancelled or no native picker
+  try { const r = await api("POST", "/api/pick-folder", { initial: initial || "" }); return r.path || ""; }
+  catch { return ""; }
+}
+function afterSettingsChange(data, msg) { optState = data; renderOptions(); loadCategories(); render(); if (msg) toast(msg); }
+$("#optBaseBrowse").addEventListener("click", async () => {
+  const p = await pickFolder(optState && optState.downloadDir);
+  if (!p) return;
+  try { afterSettingsChange(await api("POST", "/api/settings/dir", { dir: p }), "Download folder updated"); }
+  catch (e) { toast(e.message); }
+});
+$("#optCats").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-cat]"); if (!b) return;
+  const cat = b.dataset.cat;
+  const p = await pickFolder((optState && optState.categories || {})[cat]);
+  if (!p) return;
+  try { afterSettingsChange(await api("POST", "/api/settings/category", { category: cat, dir: p }), cat + " folder pinned"); }
+  catch (e) { toast(e.message); }
+});
+$("#optConc").addEventListener("change", async () => {
+  let n = parseInt($("#optConc").value, 10);
+  if (!Number.isFinite(n)) { renderOptions(); return; }
+  n = Math.max(1, Math.min(16, n));
+  $("#optConc").value = n;
+  try { afterSettingsChange(await api("POST", "/api/settings/concurrent", { n }), `Up to ${n} download${n === 1 ? "" : "s"} at once`); }
+  catch (e) { toast(e.message); }
+});
+$("#optDev").addEventListener("change", () => {
+  lsSet("dbox.dev", $("#optDev").checked ? "1" : "0");
+  renderToolbar(); // Preview + UI icons appear/vanish immediately
+  toast($("#optDev").checked ? "Developer mode on — Preview & UI icons added to the toolbar" : "Developer mode off");
+});
+$("#optShutdown").addEventListener("change", async () => {
+  const on = $("#optShutdown").checked;
+  try {
+    optState = await api("POST", "/api/settings/shutdown", { on });
+    toast(on ? "PC will turn off when all downloads finish" : "Auto shutdown off");
+  } catch (e) { toast(e.message); $("#optShutdown").checked = !on; }
+});
+$("#optReset").addEventListener("click", async () => {
+  if (!await askConfirm("Reset the base folder and all pinned category folders to defaults? Existing files stay where they are.", "Reset")) return;
+  try { afterSettingsChange(await api("POST", "/api/settings/reset"), "Paths reset to defaults"); }
+  catch (e) { toast(e.message); }
+});
+$("#optClose").addEventListener("click", closeOptions);
+$("#optionsModal").addEventListener("click", (e) => { if (e.target === $("#optionsModal")) closeOptions(); });
+
+// ---- scheduler -----------------------------------------------------------
+// Schedule a download to start at a future time. Selected paused/queued/failed
+// rows can be scheduled here; the New Download window also has a "Schedule"
+// field. Scheduled tasks sit in "scheduled" state and auto-queue at their time.
+let schedOpen = false;
+const SCHEDULABLE = ["paused", "failed", "queued", "scheduled"];
+function localDTValue(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function openScheduler() {
+  schedOpen = true;
+  $("#schedWhen").value = localDTValue(new Date(Date.now() + 3600 * 1000)); // default: +1 hour
+  $("#schedModal").classList.add("show");
+  renderScheduler();
+}
+function closeScheduler() { schedOpen = false; $("#schedModal").classList.remove("show"); }
+function renderScheduler() {
+  if (!schedOpen) return;
+  const sel = selectedTasks().filter(t => SCHEDULABLE.includes(t.status));
+  $("#schedSelInfo").textContent = sel.length
+    ? `${sel.length} selected download${sel.length === 1 ? "" : "s"} will start at the time above.`
+    : "Tip: select paused or queued downloads in the list before opening this, then set a time.";
+  $("#schedAdd").disabled = !sel.length;
+  $("#schedAdd").style.opacity = sel.length ? "1" : ".5";
+  const scheduled = tasks.filter(t => t.status === "scheduled")
+    .sort((a, b) => (Date.parse(a.scheduledAt) || 0) - (Date.parse(b.scheduledAt) || 0));
+  $("#schedList").innerHTML = scheduled.length ? scheduled.map(t => `
+    <div style="display:flex; align-items:center; gap:8px; background:var(--panel); border:1px solid var(--border); border-radius:5px; padding:6px 9px;">
+      <span class="ic">${catIconHTML(categoryOf(t))}</span>
+      <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(t.fileName || t.url)}">${esc(t.fileName || t.url)}</span>
+      <span style="flex:none; color:var(--yellow); font-variant-numeric:tabular-nums;">&#9200; ${esc(humanDate(t.scheduledAt))}</span>
+      <button data-sstart="${t.id}" style="flex:none; padding:4px 9px; border-radius:5px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); cursor:pointer; font-size:.78rem;">Start now</button>
+      <button data-scancel="${t.id}" style="flex:none; padding:4px 9px; border-radius:5px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); cursor:pointer; font-size:.78rem;">Cancel</button>
+    </div>`).join("")
+    : `<div style="color:var(--muted); padding:16px 0; text-align:center;">No scheduled downloads yet.</div>`;
+}
+$("#schedAdd").addEventListener("click", async () => {
+  const v = $("#schedWhen").value; if (!v) { toast("Pick a date and time"); return; }
+  const at = new Date(v).getTime();
+  if (!at || at < Date.now()) { toast("Pick a time in the future"); return; }
+  const sel = selectedTasks().filter(t => SCHEDULABLE.includes(t.status));
+  if (!sel.length) { toast("Select a download to schedule first"); return; }
+  try { for (const t of sel) await api("POST", `/api/tasks/${t.id}/schedule`, { at }); toast(`Scheduled ${sel.length} download${sel.length === 1 ? "" : "s"}`); renderScheduler(); }
+  catch (e) { toast(e.message); }
+});
+$("#schedList").addEventListener("click", async (e) => {
+  const s = e.target.closest("[data-sstart]"), c = e.target.closest("[data-scancel]");
+  try {
+    if (s) { await api("POST", `/api/tasks/${s.dataset.sstart}/schedule`, { at: 0 }); await api("POST", `/api/tasks/${s.dataset.sstart}/resume`); toast("Started"); }
+    else if (c) { await api("POST", `/api/tasks/${c.dataset.scancel}/schedule`, { at: 0 }); toast("Schedule cancelled"); }
+    else return;
+    renderScheduler();
+  } catch (err) { toast(err.message); }
+});
+$("#schedClose").addEventListener("click", closeScheduler);
+$("#schedModal").addEventListener("click", (e) => { if (e.target === $("#schedModal")) closeScheduler(); });
+
+function doAct(act) {
+  const t = selectedTask();
+  switch (act) {
+    case "add": focusAdd(); break;
+    case "saveas": saveAs(); break;
+    case "grab": openGrabModal(); break;
+    case "resume": { const s = selectedTasks().filter(x => x.status === "paused" || x.status === "failed");
+                     if (s.length) s.forEach(x => doResume(x.id)); else resumeAll(); break; }
+    case "stop":   { const s = selectedTasks().filter(x => x.status === "downloading" || x.status === "queued");
+                     if (s.length) s.forEach(x => doPause(x.id)); else stopAll(); break; }
+    case "stopall": stopAll(); break;
+    case "delete": { const s = selectedTasks(); if (s.length) deleteSelected(s); else toast("Select a download first"); break; }
+    case "deletecompleted": deleteCompleted(); break;
+    case "options": openOptions(); break;
+    case "exit": askConfirm("Exit D BOX? Active downloads will stop.", "Exit")
+                   .then(ok => { if (ok) api("POST","/api/quit").catch(()=>{}); }); break;
+    case "scheduler": openScheduler(); break;
+    case "later": setFilter("later"); break;
+    // Toolbar Download-Later button is a toggle: open the queue, click again to
+    // return to All Downloads (the sidebar row still just switches to the view).
+    case "togglelater": setFilter(filter === "later" ? "all" : "later"); break;
+    case "start": startLater(false); break;     // start selected held items
+    case "startall": startLater(true); break;   // start all (skipped excluded)
+    case "stopq": stopLater(); break;            // stop running queue items
+    case "skip": skipLater(); break;             // toggle skip on selected items
+    case "preview": previewWindows(); break;
+    case "uiset": openUI(); break;
+    case "about": showAbout(); break;
+    case "checkupdate": checkForUpdates(true); break;
+    case "togglecats": toggleSidebar(); break;
+    case "refresh": render(); break;
+    case "wsz": if (window.__wszToggle) window.__wszToggle(); break;
+  }
+}
+
+// ---- Download Later queue ------------------------------------------------
+// Held items the user starts manually. "Start" acts on the selection; "Start
+// All" runs every non-skipped item (up to the simultaneous-downloads limit set
+// in Options); "Skip" tags selected items so Start All passes over them.
+const laterTasks = () => tasks.filter(t => t.later && t.status !== "completed");
+const laterSelected = () => selectedTasks().filter(t => t.later && t.status !== "completed");
+function startLater(all) {
+  const pool = all ? laterTasks().filter(t => !t.skip) : laterSelected();
+  const startable = pool.filter(t => t.status === "paused" || t.status === "failed");
+  if (!startable.length) { toast(all ? "Nothing to start" : "Select a held download first"); return; }
+  startable.forEach(t => doResume(t.id));
+  toast(all ? `Starting ${startable.length} (max ${optState?.maxConcurrent || 1} at once)` : `Starting ${startable.length}`);
+}
+function stopLater() {
+  let pool = laterSelected().filter(t => t.status === "downloading" || t.status === "queued");
+  if (!pool.length) pool = laterTasks().filter(t => t.status === "downloading" || t.status === "queued");
+  if (!pool.length) { toast("Nothing is downloading in the queue"); return; }
+  pool.forEach(t => doPause(t.id));
+  toast(`Stopped ${pool.length}`);
+}
+async function skipLater() {
+  const sel = laterSelected();
+  if (!sel.length) { toast("Select a download to skip"); return; }
+  const makeSkip = !sel.every(t => t.skip); // all already skipped → un-skip; else skip
+  // Persist FIRST, then reflect locally — otherwise a poll fetching the old
+  // (not-yet-updated) state clobbers an optimistic change, so the toggle only
+  // appeared to take on the second click. The POST is a localhost round-trip (~ms).
+  try {
+    for (const t of sel) await api("POST", `/api/tasks/${t.id}/skip`, { skip: makeSkip });
+    sel.forEach(t => { t.skip = makeSkip; });
+    render(); // 🚫 + line appears now; the next poll confirms the same value
+    toast(makeSkip ? `Will skip ${sel.length}` : `Un-skipped ${sel.length}`);
+  } catch (e) { toast(e.message); }
+}
+
+// ---- toolbar (context-sensitive on the Download Later view) ---------------
+const TOOLS_NORMAL = [
+  ["add","➕","Add URL"], ["grab","\u{1F517}","Grab Links"], ["resume","⬇️","Resume"], ["stop","⏹️","Stop"], ["stopall","⏸️","Stop All"], "sep",
+  ["delete","\u{1F5D1}️","Delete"], ["deletecompleted","\u{1F9F9}","Delete Completed"], "sep",
+  ["options","⚙️","Options"], ["scheduler","⏰","Scheduler"], ["togglelater","\u{1F551}","Download Later"],
+];
+const TOOLS_LATER = [
+  ["add","➕","Add URL"], ["grab","\u{1F517}","Grab Links"], ["start","▶️","Start"], ["startall","⏩","Start All"], ["stopq","⏹️","Stop"], ["skip","⏭️","Skip"], "sep",
+  ["delete","\u{1F5D1}️","Delete"], ["deletecompleted","\u{1F9F9}","Delete Completed"], "sep",
+  ["options","⚙️","Options"], ["scheduler","⏰","Scheduler"], ["togglelater","\u{1F551}","Download Later"],
+];
+// Developer-mode extras (Options → Developer mode): window Preview + UI tuning.
+const TOOLS_DEV = ["sep", ["preview","\u{1FA9F}","Preview"], ["uiset","\u{1F3A8}","UI"]];
+function renderToolbar() {
+  let tools = (filter === "later") ? TOOLS_LATER : TOOLS_NORMAL;
+  if (devMode()) tools = tools.concat(TOOLS_DEV);
+  // Highlight the Download-Later toggle while its view is active, so its
+  // pressed/return state is obvious.
+  $("#toolbar").innerHTML = tools.map(it => it === "sep" ? `<div class="tbsep"></div>`
+    : `<div class="tb${it[0] === "togglelater" && filter === "later" ? " active" : ""}" data-act="${it[0]}"><span class="ic">${it[1]}</span><span class="tl">${esc(it[2])}</span></div>`).join("");
+}
+renderToolbar();
+$("#toolbar").addEventListener("click", (e) => { const b = e.target.closest(".tb[data-act]"); if (b) doAct(b.dataset.act); });
+
+// ---- menu bar ------------------------------------------------------------
+const MENUS = [
+  ["Tasks", [["Add URL…","add"],["Grab links…","grab"],["Save as…","saveas"],"sep",["Resume selected","resume"],["Stop selected","stop"],["Stop all","stopall"],"sep",["Delete completed","deletecompleted"]]],
+  ["File", [["Add URL…","add"],["Grab links…","grab"],["Save as…","saveas"],"sep",["Exit","exit"]]],
+  ["Downloads", [["Resume","resume"],["Stop","stop"],["Stop all","stopall"],"sep",["Remove from list","delete"]]],
+  ["View", [["Show / hide categories","togglecats"],["Refresh","refresh"],"sep",["Window size overlay","wsz"]]],
+  ["Help", [["Check for updates…","checkupdate"],"sep",["About D BOX","about"]]],
+  ["Registration", [["D BOX is free \u{1F642}","about"]]],
+];
+$("#menubar").innerHTML = `<img class="applogo" src="/icons/appicon.png" alt="">` + MENUS.map((m, i) =>
+  `<div class="m" data-mi="${i}"><u>${esc(m[0][0])}</u>${esc(m[0].slice(1))}</div>`).join("");
+const dd = $("#dropdown");
+let openMenu = -1;
+function closeMenu() { dd.style.display = "none"; openMenu = -1; document.querySelectorAll(".menubar .m").forEach(m => m.classList.remove("open")); }
+function openMenuAt(i) {
+  const items = MENUS[i][1];
+  dd._items = items;
+  dd.innerHTML = items.map((it, k) => it === "sep" ? `<div class="sep"></div>`
+    : `<div class="di" data-k="${k}">${esc(it[0])}</div>`).join("");
+  const el = document.querySelector(`.menubar .m[data-mi="${i}"]`);
+  const r = el.getBoundingClientRect();
+  dd.style.display = "block";
+  dd.style.left = r.left + "px";
+  dd.style.top = r.bottom + "px";
+  document.querySelectorAll(".menubar .m").forEach(m => m.classList.toggle("open", +m.dataset.mi === i));
+  openMenu = i;
+}
+$("#menubar").addEventListener("click", (e) => {
+  const m = e.target.closest(".m"); if (!m) return;
+  const i = +m.dataset.mi;
+  if (openMenu === i) closeMenu(); else openMenuAt(i);
+});
+$("#menubar").addEventListener("mouseover", (e) => {
+  if (openMenu < 0) return;
+  const m = e.target.closest(".m"); if (m && +m.dataset.mi !== openMenu) openMenuAt(+m.dataset.mi);
+});
+dd.addEventListener("click", (e) => {
+  const di = e.target.closest(".di"); if (!di || !dd._items) return;
+  const it = dd._items[+di.dataset.k]; closeMenu(); if (it) doAct(it[1]);
+});
+
+// ---- selection, header sort, context menu --------------------------------
+function applySelection() { document.querySelectorAll("#rows tr[data-id]").forEach(tr => tr.classList.toggle("selected", selectedIds.has(tr.dataset.id))); }
+// Shift-range from the anchor to toId over the visible (sorted) rows; additive
+// (ctrl+shift) merges the range into the current selection instead of replacing.
+function selectRange(toId, additive) {
+  const a = shownTasks.findIndex(t => t.id === anchorId);
+  const b = shownTasks.findIndex(t => t.id === toId);
+  if (a < 0 || b < 0) { selectedIds = new Set([toId]); anchorId = toId; return; }
+  const [lo, hi] = a <= b ? [a, b] : [b, a];
+  if (!additive) selectedIds = new Set();
+  for (let i = lo; i <= hi; i++) selectedIds.add(shownTasks[i].id);
+}
+$("#thead").addEventListener("click", (e) => {
+  const th = e.target.closest("th[data-sort]"); if (!th) return;
+  const key = th.dataset.sort;
+  if (SORT.key === key) SORT.dir *= -1;
+  else { SORT.key = key; SORT.dir = (key === "name" || key === "status" || key === "desc") ? 1 : -1; }
+  render();
+});
+// Windows-11-style selection: plain click = single; ctrl = toggle; shift = range
+// from anchor; ctrl+shift = add range.
+$("#rows").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+  const id = tr.dataset.id;
+  const ctrl = e.ctrlKey || e.metaKey, shift = e.shiftKey;
+  if (shift && anchorId != null) {
+    selectRange(id, ctrl);
+  } else if (ctrl) {
+    if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+    anchorId = id; // ctrl-click moves the anchor
+  } else if (selectedIds.size === 1 && selectedIds.has(id)) {
+    selectedIds.clear(); anchorId = null; // clicking the already-selected row deselects it
+  } else {
+    selectedIds = new Set([id]); anchorId = id;
+  }
+  applySelection();
+});
+// Double-click: completed → open the file; anything else → live status window.
+$("#rows").addEventListener("dblclick", (e) => {
+  const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+  const t = tasks.find(x => x.id === tr.dataset.id);
+  if (!t) return;
+  selectedIds = new Set([t.id]); anchorId = t.id; applySelection();
+  if (t.status === "completed") doOpen(t.id);
+  else doDetail(t.id);
+});
+// Click the empty area below the rows (or the header gap) to clear the selection
+// — an easy, discoverable way to deselect everything.
+$(".tablewrap").addEventListener("click", (e) => {
+  if (e.target.closest("tr[data-id]") || e.target.closest("thead")) return; // rows/header handled above
+  if (selectedIds.size) { selectedIds.clear(); anchorId = null; applySelection(); }
+});
+// ---- in-page dialog host (New Download / status) -------------------------
+// Single-window mode (Wails / browser): load the dialog pages into an iframe
+// modal instead of opening separate OS windows.
+function openDialog(src, w, h) {
+  const f = $("#dlgFrame");
+  if (w) f.style.width = w + "px";
+  if (h) f.style.height = h + "px";
+  f.src = src;
+  $("#dlgModal").classList.add("show");
+}
+function closeDialog() {
+  $("#dlgModal").classList.remove("show");
+  $("#dlgFrame").src = "about:blank";
+  $("#dlgFrame").style.width = ""; $("#dlgFrame").style.height = "";
+}
+// Called by the dialog pages (add/detail) when they finish, since window.close()
+// can't close an iframe. Polling refreshes the list shortly after.
+window.myidmDialogClosed = closeDialog;
+// Called by add.html after Start: swap the dialog to the live progress view.
+window.myidmShowStatus = (id) => openDialog("/detail?id=" + id, 600, 470);
+$("#dlgModal").addEventListener("click", (e) => { if (e.target === $("#dlgModal")) closeDialog(); });
+
+// Double-clicking an in-progress download opens the per-connection status view.
+window.doDetail = (id) => {
+  if (serverGUI) {
+    api("POST", "/api/detail", { id }).then(r => { if (!r || !r.native) openDialog("/detail?id=" + id, 600, 470); })
+      .catch(() => openDialog("/detail?id=" + id, 600, 470));
+  } else {
+    openDialog("/detail?id=" + id, 600, 470);
+  }
+};
+
+const ctx = $("#ctxmenu");
+function hideCtx() { ctx.style.display = "none"; ctx._items = null; }
+function ctxItems(t) {
+  const I = [];
+  if (t.status === "downloading" || t.status === "queued") {
+    I.push({ k:"📊", label:"Show download status", fn:() => doDetail(t.id) });
+    I.push({ k:"❚❚", label:"Pause", fn:() => doPause(t.id) });
+    I.push({ k:"✕", label:"Cancel", fn:() => doDelete(t.id, true), danger:true });
+  } else if (t.status === "paused") {
+    I.push({ k:"▶", label:"Resume", fn:() => doResume(t.id) });
+    I.push({ k:"✕", label:"Remove", fn:() => doDelete(t.id, true), danger:true });
+  } else if (t.status === "failed") {
+    I.push({ k:"↻", label:"Retry", fn:() => doResume(t.id) });
+    I.push({ k:"✕", label:"Remove", fn:() => doDelete(t.id, true), danger:true });
+  } else if (t.status === "completed") {
+    // Open file / folder are always offered — the server is the source of truth on
+    // whether the file is really there (fileExists can lag), so a stale flag never
+    // hides the action the user most wants.
+    I.push({ k:"⤓", label:"Open file", fn:() => doOpen(t.id) });
+    I.push({ k:"📁", label:"Open with / show in folder", fn:() => doReveal(t.id) });
+    if (t.fileExists) {
+      I.push({ k:"✎", label:"Rename…", fn:() => doRename(t.id) });
+      I.push({ k:"➚", label:"Move to…", fn:() => doMove(t.id) });
+    }
+    I.push({ sep:true });
+    I.push({ k:"🗑", label:"Remove from list", fn:() => doDelete(t.id, false), danger:true });
+    if (t.fileExists) I.push({ k:"🗑", label:"Delete + file", fn:() => doDelete(t.id, true, true), danger:true });
+  }
+  I.push({ sep:true });
+  I.push({ k:"🔗", label:"Copy address", fn:() => copyText(t.url) });
+  return I;
+}
+function openCtx(x, y, t) {
+  const items = ctxItems(t); ctx._items = items;
+  ctx.innerHTML = items.map((it, i) => it.sep ? `<div class="sep"></div>`
+    : `<div class="di${it.danger ? " danger" : ""}" data-k="${i}"><span class="k">${it.k || ""}</span>${esc(it.label)}</div>`).join("");
+  ctx.style.display = "block";
+  const w = ctx.offsetWidth, h = ctx.offsetHeight;
+  ctx.style.left = Math.min(x, innerWidth - w - 6) + "px";
+  ctx.style.top = Math.min(y, innerHeight - h - 6) + "px";
+}
+$("#rows").addEventListener("contextmenu", (e) => {
+  const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+  e.preventDefault();
+  const id = tr.dataset.id;
+  // Right-clicking an item outside the selection selects just it; right-clicking
+  // one already selected keeps the multi-selection (Windows behavior).
+  if (!selectedIds.has(id)) { selectedIds = new Set([id]); anchorId = id; applySelection(); }
+  const t = tasks.find(x => x.id === id); if (t) openCtx(e.clientX, e.clientY, t);
+});
+ctx.addEventListener("click", (e) => {
+  const di = e.target.closest(".di"); if (!di || !ctx._items) return;
+  const it = ctx._items[+di.dataset.k]; hideCtx(); if (it && it.fn) it.fn();
+});
+
+// ---- sidebar interactions ------------------------------------------------
+$("#sidebar").addEventListener("click", (e) => {
+  if (e.target.closest("[data-toggle]")) { allExpanded = !allExpanded; renderSidebar(); return; }
+  const row = e.target.closest(".trow"); if (!row) return;
+  setFilter(row.dataset.f);
+});
+$("#catClose").addEventListener("click", toggleSidebar);
+
+// global dismissers
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#ctxmenu")) hideCtx();
+  if (!e.target.closest(".menubar") && !e.target.closest("#dropdown")) closeMenu();
+});
+document.addEventListener("scroll", () => { hideCtx(); closeMenu(); }, true);
+window.addEventListener("resize", () => { hideCtx(); closeMenu(); });
+
+// ---- add / save as -------------------------------------------------------
+// Opens the IDM-style "New Download" dialog (save location by file type, Browse,
+// Start / Cancel). With native windows (serverGUI) the server pops one; otherwise
+// (Wails single-window / browser) it's an in-page iframe modal.
+async function addUrlFlow(u, skipPlaylist) {
+  u = (u || "").trim();
+  if (!u) { toast("Paste a URL first"); return; }
+  // A YouTube playlist URL? Offer to grab the whole thing before the normal dialog.
+  if (!skipPlaylist && /[?&]list=/.test(u) && /(youtube\.com|youtu\.be)/i.test(u)) {
+    toast("Checking playlist…");
+    try {
+      const info = await api("GET", "/api/playlist?url=" + encodeURIComponent(u));
+      if (info && info.isPlaylist && info.count > 1) { openPlaylistModal(u, info); return; }
+    } catch {}
+  }
+  if (serverGUI) {
+    try { const r = await api("POST", "/api/prompt", { url: u }); if (r && r.native) { $("#urlInput").value = ""; return; } } catch {}
+  }
+  openDialog("/add?url=" + encodeURIComponent(u) + "&dialog=1");
+  $("#urlInput").value = "";
+}
+$("#saveAsBtn").addEventListener("click", () => addUrlFlow($("#urlInput").value));
+$("#addForm").addEventListener("submit", (ev) => { ev.preventDefault(); addUrlFlow($("#urlInput").value); });
+
+// ---- YouTube playlist ----------------------------------------------------
+// The server enumerates the playlist's videos (deduped); we show every one with
+// a checkbox (all checked) so the user picks exactly what to download.
+let plURL = "", plEntries = [], plIsMix = false;
+function plCountText() {
+  const sel = plEntries.filter(e => e.selected).length;
+  const base = `${plEntries.length} video${plEntries.length === 1 ? "" : "s"} — ${sel} selected (best quality)`;
+  return plIsMix ? base + " · YouTube Mix (endless radio — showing the first videos)" : base;
+}
+function renderPlList() {
+  $("#plList").innerHTML = plEntries.length ? plEntries.map((e, i) => `
+    <label class="grabrow" style="display:flex; align-items:center; gap:8px; padding:4px 7px; border-radius:4px; cursor:pointer;">
+      <input type="checkbox" ${e.selected ? "checked" : ""} data-pi="${i}">
+      <span style="color:var(--muted); font-size:.75rem; flex:none; width:30px; text-align:right;">${i + 1}</span>
+      <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(e.title)}">${esc(e.title)}</span>
+    </label>`).join("")
+    : `<div style="color:var(--muted); text-align:center; padding:14px;">No videos found.</div>`;
+  $("#plCount").textContent = plCountText();
+}
+function openPlaylistModal(u, info) {
+  const t = $("#toast"); t.classList.remove("show"); clearTimeout(t._h); // drop the stale "Checking playlist…"
+  plURL = u;
+  plIsMix = !!info.mix;
+  plEntries = (info.entries || []).map(e => ({ url: e.url, title: e.title || "video", selected: true }));
+  $("#plTitle").textContent = info.title || "Playlist";
+  $("#plTitle").title = info.title || "";
+  $("#plAudio").checked = false; $("#plLater").checked = false;
+  $("#plOne").style.display = /[?&]v=/.test(u) ? "" : "none"; // only offer "just this" for a watch URL
+  renderPlList();
+  $("#plModal").classList.add("show");
+}
+function closePl() { $("#plModal").classList.remove("show"); }
+$("#plList").addEventListener("change", (e) => {
+  const cb = e.target.closest("[data-pi]"); if (!cb) return;
+  const i = +cb.dataset.pi; if (plEntries[i]) plEntries[i].selected = cb.checked;
+  $("#plCount").textContent = plCountText();
+});
+$("#plSelAll").addEventListener("click", (e) => { e.preventDefault(); plEntries.forEach(x => x.selected = true); renderPlList(); });
+$("#plSelNone").addEventListener("click", (e) => { e.preventDefault(); plEntries.forEach(x => x.selected = false); renderPlList(); });
+$("#plGo").addEventListener("click", async () => {
+  const sel = plEntries.filter(e => e.selected);
+  if (!sel.length) { toast("Select at least one video"); return; }
+  const audio = $("#plAudio").checked, later = $("#plLater").checked;
+  closePl(); $("#urlInput").value = ""; toast(`Adding ${sel.length} video${sel.length === 1 ? "" : "s"}…`);
+  try {
+    const r = await api("POST", "/api/playlist", { url: plURL, audio, later, entries: sel.map(e => ({ url: e.url, title: e.title })) });
+    toast(`Added ${r.count} video${r.count === 1 ? "" : "s"}${later ? " to Download Later" : ""}`);
+  } catch (e) { toast(e.message); }
+});
+$("#plOne").addEventListener("click", () => {
+  const single = plURL.replace(/([?&])list=[^&]*(&|$)/, "$1").replace(/[?&]$/, ""); // drop the list= param
+  closePl(); addUrlFlow(single, true);
+});
+$("#plCancel").addEventListener("click", closePl);
+$("#plModal").addEventListener("click", (e) => { if (e.target === $("#plModal")) closePl(); });
+
+// ---- Grab Links (JDownloader-style link grabber) -------------------------
+// Paste a page's text/HTML (or any block of text with many links) and pull out
+// every download link in it, so a site with dozens of file mirrors can be
+// queued in one go instead of one-by-one. Direct-file links only (segmented
+// HTTP engine) — not streaming-site pages; use the URL bar for those (or a
+// playlist URL, handled above).
+let grabLinks = []; // [{url, name, cat, recognized, selected}]
+function extractLinks(text) {
+  const seen = new Set(), out = [];
+  const push = (u) => {
+    u = u.replace(/&amp;/gi, "&")           // hrefs from HTML carry entity-encoded &
+         .replace(/[.,;:!?'")\]]+$/, "");   // drop trailing punctuation caught by the match
+    if (/^https?:\/\//i.test(u) && !seen.has(u)) { seen.add(u); out.push(u); }
+  };
+  const s = text || "";
+  // href attributes FIRST: in copied HTML the visible text is often just a file
+  // NAME while the real address lives only in the anchor's href.
+  for (const m of s.matchAll(/href\s*=\s*["']([^"']+)["']/gi)) push(m[1]);
+  for (const u of s.match(/https?:\/\/[^\s<>"']+/g) || []) push(u);
+  return out;
+}
+// Clipboard link scan across BOTH flavors, like JDownloader: copying links off a
+// page puts only their labels (file names) in the text flavor — the actual URLs
+// ride along in the text/html flavor's hrefs. Returns whichever finds more.
+function linksFromClipboard(dt) {
+  if (!dt) return [];
+  const fromHtml = extractLinks(dt.getData("text/html"));
+  const fromText = extractLinks(dt.getData("text"));
+  return fromHtml.length > fromText.length ? fromHtml : fromText;
+}
+function grabExtOf(u) {
+  try { const m = /\.([A-Za-z0-9]{1,8})$/.exec(new URL(u).pathname); return m ? m[1].toLowerCase() : ""; }
+  catch { return ""; }
+}
+function grabNameOf(u) {
+  try {
+    const base = decodeURIComponent(new URL(u).pathname.split("/").filter(Boolean).pop() || "");
+    return base || hostOf(u) || u;
+  } catch { return u; }
+}
+function renderGrabList() {
+  const onlyFiles = $("#grabOnlyFiles").checked;
+  const rows = grabLinks.filter(l => !onlyFiles || l.recognized);
+  $("#grabList").innerHTML = rows.length ? rows.map(l => `
+    <label class="grabrow" style="display:flex; align-items:center; gap:8px; padding:5px 7px; border-radius:4px; cursor:pointer;">
+      <input type="checkbox" ${l.selected ? "checked" : ""} data-gsel="${esc(l.url)}">
+      <span class="ic">${l.cat ? catIconHTML(l.cat) : "\u{1F517}"}</span>
+      <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(l.url)}">${esc(l.name)}</span>
+      <span style="color:var(--muted); font-size:.75rem; flex:none;">${esc(l.cat || "link")}</span>
+    </label>`).join("")
+    : `<div style="color:var(--muted); text-align:center; padding:16px;">No ${onlyFiles ? "recognized file " : ""}links found.</div>`;
+  const selCount = rows.filter(l => l.selected).length;
+  $("#grabSummary").textContent = `${rows.length} link${rows.length === 1 ? "" : "s"} found — ${selCount} selected`;
+}
+function openGrabModal(prefill) {
+  $("#grabText").value = prefill || "";
+  $("#grabPasteWrap").style.display = ""; $("#grabResultWrap").style.display = "none";
+  $("#grabAdd").style.display = "none"; $("#grabBack").style.display = "none";
+  $("#grabOnlyFiles").checked = true; $("#grabLater").checked = false;
+  grabLinks = [];
+  $("#grabModal").classList.add("show");
+  if (prefill) setTimeout(() => $("#grabFind").click(), 0); // auto-run when opened from a multi-link paste
+}
+function closeGrab() { $("#grabModal").classList.remove("show"); }
+// Ctrl+V into the box: when the HTML flavor carries more links than the plain
+// text (link labels vs real hrefs), paste the extracted ADDRESSES instead.
+$("#grabText").addEventListener("paste", (e) => {
+  const dt = e.clipboardData || window.clipboardData; if (!dt || !dt.getData("text/html")) return;
+  const links = extractLinks(dt.getData("text/html"));
+  if (links.length <= extractLinks(dt.getData("text")).length) return; // plain paste is fine
+  e.preventDefault();
+  const ta = $("#grabText");
+  ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, "\n") : "") + links.join("\n");
+  toast(`Pulled ${links.length} link${links.length === 1 ? "" : "s"} out of the copied HTML`);
+});
+$("#grabPasteBtn").addEventListener("click", async () => {
+  try {
+    // Prefer the clipboard's HTML flavor for the same reason as the paste handler
+    // above; readText alone only sees the visible labels.
+    let links = null;
+    try {
+      for (const item of await navigator.clipboard.read()) {
+        if (!item.types.includes("text/html")) continue;
+        const l = extractLinks(await (await item.getType("text/html")).text());
+        if (l.length) links = l;
+        break;
+      }
+    } catch (_) {} // async read blocked → fall back to plain text
+    const t = links ? links.join("\n") : await navigator.clipboard.readText();
+    if (t) { $("#grabText").value = t; toast("Pasted"); } else toast("Clipboard is empty");
+  } catch { toast("Clipboard access blocked — press Ctrl+V in the box instead"); }
+});
+$("#grabFind").addEventListener("click", () => {
+  const raw = $("#grabText").value;
+  const urls = extractLinks(raw);
+  if (!urls.length) {
+    // A pile of "xxx.rar"-style lines = the user copied link LABELS; the real
+    // addresses only exist in the page's HTML. Tell them how to get those.
+    toast(/\.[a-z0-9]{2,4}(\s|$)/i.test(raw.trim())
+      ? "Those are file names, not links — on the page, select the links themselves (or right-click → Copy link) and paste again."
+      : "No links found in that text");
+    return;
+  }
+  grabLinks = urls.map(u => { const cat = extMap[grabExtOf(u)] || ""; return { url: u, name: grabNameOf(u), cat, recognized: !!cat, selected: true }; });
+  $("#grabPasteWrap").style.display = "none"; $("#grabResultWrap").style.display = "";
+  $("#grabAdd").style.display = ""; $("#grabBack").style.display = "";
+  renderGrabList();
+});
+$("#grabBack").addEventListener("click", () => {
+  $("#grabResultWrap").style.display = "none"; $("#grabPasteWrap").style.display = "";
+  $("#grabAdd").style.display = "none"; $("#grabBack").style.display = "none";
+});
+$("#grabOnlyFiles").addEventListener("change", renderGrabList);
+$("#grabList").addEventListener("change", (e) => {
+  const cb = e.target.closest("[data-gsel]"); if (!cb) return;
+  const l = grabLinks.find(x => x.url === cb.dataset.gsel); if (l) l.selected = cb.checked;
+  renderGrabList();
+});
+$("#grabSelAll").addEventListener("click", (e) => { e.preventDefault(); const of = $("#grabOnlyFiles").checked; grabLinks.forEach(l => { if (!of || l.recognized) l.selected = true; }); renderGrabList(); });
+$("#grabSelNone").addEventListener("click", (e) => { e.preventDefault(); const of = $("#grabOnlyFiles").checked; grabLinks.forEach(l => { if (!of || l.recognized) l.selected = false; }); renderGrabList(); });
+$("#grabAdd").addEventListener("click", async () => {
+  const onlyFiles = $("#grabOnlyFiles").checked;
+  const sel = grabLinks.filter(l => l.selected && (!onlyFiles || l.recognized));
+  if (!sel.length) { toast("Select at least one link"); return; }
+  const later = $("#grabLater").checked;
+  closeGrab();
+  toast(`Adding ${sel.length} link${sel.length === 1 ? "" : "s"}…`);
+  let ok = 0;
+  for (const l of sel) {
+    try {
+      const body = { url: l.url };
+      if (l.cat) body.category = l.cat;
+      if (later) body.later = true;
+      await api("POST", "/api/tasks", body);
+      ok++;
+    } catch (_) {}
+  }
+  toast(`Added ${ok} of ${sel.length} link${sel.length === 1 ? "" : "s"}${later ? " to Download Later" : ""}`);
+});
+$("#grabCancel").addEventListener("click", closeGrab);
+$("#grabModal").addEventListener("click", (e) => { if (e.target === $("#grabModal")) closeGrab(); });
+// Pasting several links at once into the plain URL bar opens the grabber
+// pre-filled instead of jamming them into one field.
+$("#urlInput").addEventListener("paste", (e) => {
+  const links = linksFromClipboard(e.clipboardData || window.clipboardData);
+  if (links.length > 1) { e.preventDefault(); openGrabModal(links.join("\n")); }
+});
+
+// ---- preview: pop all three secondary windows at once --------------------
+// Eyeball the New Download dialog + Download status + Download complete windows
+// together. The status and completion windows are opened for the SAME task id,
+// so the "close one closes both" pairing can be exercised from here too. Prefers
+// a completed task (its data fills both windows nicely), else the newest one.
+async function previewWindows() {
+  const sampleURL = $("#urlInput").value.trim() || "https://example.com/dbox-sample-video.mp4";
+  const t = tasks.find(x => x.status === "completed") || tasks[0];
+  if (serverGUI) { // native app: each is a real floating window
+    try { await api("POST", "/api/prompt", { url: sampleURL }); } catch {}
+    if (t) {
+      try { await api("POST", "/api/detail", { id: t.id }); } catch {}
+      try { await api("POST", "/api/done",   { id: t.id }); } catch {}
+    } else {
+      toast("Add a download first — the status & complete windows need a task");
+    }
+  } else { // single-window / browser: New Download shows inline
+    openDialog("/add?url=" + encodeURIComponent(sampleURL) + "&dialog=1");
+    toast("Single-window mode: status & complete appear inline during downloads");
+  }
+}
+
+// ---- "Download complete" popup -------------------------------------------
+const SUPPRESS_KEY = "myidm.donePopupSuppressUntil";
+let seenStatus = null, doneQueue = [], doneCurrent = null;
+const popupSuppressed = () => Date.now() < (+localStorage.getItem(SUPPRESS_KEY) || 0);
+function detectCompletions(list) {
+  if (seenStatus === null) { seenStatus = {}; for (const t of list) seenStatus[t.id] = t.status; return; }
+  // In the native app, the engine pops a separate top-level "done" window, so
+  // the in-app modal stays off to avoid a double popup.
+  const suppressed = popupSuppressed() || serverGUI;
+  for (const t of list) {
+    const prev = seenStatus[t.id];
+    if (!suppressed && t.status === "completed" && prev !== "completed"
+        && !doneQueue.some(q => q.id === t.id) && !(doneCurrent && doneCurrent.id === t.id)) doneQueue.push(t);
+  }
+  const next = {}; for (const t of list) next[t.id] = t.status; seenStatus = next;
+  showNextDone();
+}
+function showNextDone() {
+  if (doneCurrent || !doneQueue.length) return;
+  if (popupSuppressed()) { doneQueue = []; return; }
+  doneCurrent = doneQueue.shift(); const t = doneCurrent;
+  $("#dmName").textContent = t.fileName || "download";
+  $("#dmMeta").textContent = [t.size > 0 ? humanBytes(t.size) : "", t.filePath || ""].filter(Boolean).join("  ·  ");
+  $("#dmMore").textContent = doneQueue.length ? `+${doneQueue.length} more` : "";
+  $("#dmSuppress").checked = false;
+  const canOpen = t.fileExists !== false; $("#dmOpen").disabled = !canOpen; $("#dmFolder").disabled = !canOpen;
+  $("#doneModal").classList.add("show");
+}
+function closeDone() {
+  if ($("#dmSuppress").checked) { localStorage.setItem(SUPPRESS_KEY, String(Date.now() + 2*3600*1000)); doneQueue = []; }
+  $("#doneModal").classList.remove("show"); doneCurrent = null; setTimeout(showNextDone, 180);
+}
+$("#dmClose").addEventListener("click", closeDone);
+$("#dmOpen").addEventListener("click", () => { if (doneCurrent) doOpen(doneCurrent.id); closeDone(); });
+$("#dmFolder").addEventListener("click", () => { if (doneCurrent) doReveal(doneCurrent.id); closeDone(); });
+$("#doneModal").addEventListener("click", (e) => { if (e.target === $("#doneModal")) closeDone(); });
+// Every modal, paired with its close function — ONE list drives both the Escape
+// handler and the list-shortcut guard, so a new modal can't be forgotten in one
+// of them (which used to leave Escape clearing the selection UNDER the playlist
+// modal, and Delete removing rows behind it).
+const MODALS = [
+  ["confirmModal", () => closeConfirm(false)],
+  ["doneModal", closeDone], ["aboutModal", () => $("#aboutModal").classList.remove("show")],
+  ["optionsModal", closeOptions], ["schedModal", closeScheduler], ["renameModal", closeRename],
+  ["plModal", closePl], ["grabModal", closeGrab], ["uiModal", closeUI], ["updModal", closeUpd], ["dlgModal", closeDialog],
+];
+const anyModalOpen = () => MODALS.some(([m]) => $("#" + m).classList.contains("show"));
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  // Did Escape have a menu/modal/popup to dismiss? If so, don't also clear the selection.
+  const dismissable = ctx.style.display !== "none" || openMenu >= 0 || anyModalOpen();
+  hideCtx(); closeMenu();
+  // Close only the TOPMOST open modal (confirm stacks over Options/Scheduler) —
+  // one Escape per layer, like native dialogs.
+  for (const [m, close] of MODALS) if ($("#" + m).classList.contains("show")) { close(); break; }
+  // Plain Escape (nothing to dismiss) clears the row selection — the easy deselect.
+  if (!dismissable && selectedIds.size) { selectedIds.clear(); anchorId = null; applySelection(); }
+});
+// List keyboard: Ctrl+A select all, Delete remove selected, Enter open/show.
+// Ignored while typing in a field, on a button, or with any modal open.
+document.addEventListener("keydown", (e) => {
+  if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(e.target.tagName)) return;
+  if (anyModalOpen()) return;
+  if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+    e.preventDefault();
+    selectedIds = new Set(shownTasks.map(t => t.id));
+    anchorId = shownTasks.length ? shownTasks[0].id : null;
+    applySelection();
+  } else if (e.key === "Delete") {
+    const s = selectedTasks(); if (s.length) deleteSelected(s);
+  } else if (e.key === "Enter") {
+    const t = selectedTask(); if (t) { if (t.status === "completed") doOpen(t.id); else doDetail(t.id); }
+  }
+});
+
+// Live updates via polling rather than SSE: Wails' asset server buffers
+// responses so EventSource can't stream through it. Polling (request/response)
+// works for Wails, the raw WebView2 window and the browser alike. We only
+// re-render when the task data actually changed, so it never disrupts hovering,
+// selection or an open context menu.
+let pollSig = "";
+async function poll() {
+  try {
+    const d = await api("GET", "/api/tasks");
+    const list = d.tasks || [];
+    tasks = list;
+    detectCompletions(list);
+    // The change-signature must cover every field a row RENDERS, or edits that
+    // only touch that field (rename, re-schedule, move, external file delete)
+    // never repaint: fileName, scheduledAt, dir, fileExists, later, description.
+    const sig = list.map(t => t.id + ":" + t.status + ":" + t.size + ":" + t.downloaded + ":" + ((t.speed||0)|0)
+      + ":" + (t.skip?1:0) + (t.later?1:0) + (t.fileExists?1:0) + ":" + (t.fileName||"") + ":" + (t.scheduledAt||"")
+      + ":" + (t.dir||"") + ":" + (t.description||"")).join("|");
+    if (sig !== pollSig) { pollSig = sig; render(); }
+  } catch {}
+  // New Download prompts relayed from the browser extension (POST /api/prompt).
+  try {
+    const p = await api("GET", "/api/prompts");
+    if (p && p.prompts) for (const qs of p.prompts) openDialog("/add?" + qs);
+  } catch {}
+}
+function connect() { poll(); setInterval(poll, 350); }
+loadCategories().then(connect); // categories first, so the first table render has icons
+loadOptions(); // preload settings (download folder, max-concurrent) up front
+
+// Show the running version in About, and check for a newer build once at
+// startup (silent — only pops the modal if an update is actually available).
+// Guarded so a reopened window (same session) doesn't nag repeatedly.
+(async () => {
+  try {
+    const r = await api("GET", "/api/update/check");
+    if (r && r.current) $("#abVersion").textContent = "v" + r.current;
+    if (r && r.available && !sessionStorage.getItem("dbox.upd.seen")) {
+      sessionStorage.setItem("dbox.upd.seen", "1");
+      checkForUpdates(false);
+    }
+  } catch (_) {}
+})();
+</script>
+<script>
+/* Reveal the native window only after the first paint — the gui layer parks it
+   off-screen until myidmReady() fires, eliminating the WebView2 white/black
+   cold-start flash. */
+(function () {
+  function ready() { try { window.myidmReady && window.myidmReady(); } catch (e) {} }
+  function arm() { requestAnimationFrame(function () { requestAnimationFrame(ready); }); }
+  if (document.readyState === 'loading') addEventListener('DOMContentLoaded', arm);
+  else arm();
+})();
+</script>
+<div id="wsz"><span id="wsz-t"></span><span id="wsz-x" title="Hide — Ctrl+Alt+W to toggle">&#10005;</span></div>
+<style>
+#wsz{position:fixed;right:7px;bottom:7px;z-index:2147483647;background:rgba(18,20,23,.9);color:#bfe0ff;font:600 11px/1.25 "Segoe UI",Tahoma,sans-serif;padding:3px 8px;border:1px solid #3a8ee6;border-radius:5px;pointer-events:none;white-space:nowrap;letter-spacing:.2px;}
+#wsz-x{pointer-events:auto;cursor:pointer;margin-left:9px;opacity:.6;}
+#wsz-x:hover{opacity:1;}
+</style>
+<script>
+(function(){var N=1,K="dbox.wsz.show";
+var b=document.getElementById("wsz"),t=document.getElementById("wsz-t"),x=document.getElementById("wsz-x");
+function shown(){try{return localStorage.getItem(K)==="1";}catch(e){return false;}}
+function apply(){b.style.display=shown()?"":"none";}
+function dpr(){return Math.round((window.devicePixelRatio||1)*100)/100;}
+function upd(){t.textContent="#"+N+"  "+window.innerWidth+" × "+window.innerHeight+"  · ×"+dpr();}
+function toggle(){try{localStorage.setItem(K,shown()?"0":"1");}catch(e){}apply();}
+x.addEventListener("click",toggle);
+window.addEventListener("resize",upd);
+window.addEventListener("keydown",function(e){if(e.ctrlKey&&e.altKey&&(e.key==="w"||e.key==="W")){e.preventDefault();toggle();}});
+upd();apply();window.__wszToggle=toggle;
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>
+/* Follow the main window's theme (UI settings panel); applied pre-paint. */
+(function () {
+  try {
+    var t = localStorage.getItem("dbox.ui.theme");
+    if (t && t !== "graphite") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+})();
+</script>
+<title>Download File Info — D BOX</title>
+<style>
+  :root {
+    --bg: #3c4043; --panel: #303336; --field: #2a2d2f; --border: #4e5256;
+    --text: #e6e6e6; --muted: #9aa0a4; --accent: #6aa6e6;
+    font-size: 13px;
+  }
+
+  /* ---- themes (follow the main window's UI settings) ---- */
+  :root { color-scheme: dark; --grad-a: #42474b; --grad-b: #383c40; --pri-a: #4f8fd6; --pri-b: #3a6ea8; }
+  :root[data-theme=midnight] { --bg: #22262d; --panel: #181c22; --panel-2: #2b313a; --field: #14171c;
+    --border: #3a424d; --grid: #242931; --text: #dfe3e8; --muted: #8b939e; --accent: #64a8f0;
+    --grad-a: #2b313a; --grad-b: #22272e; }
+  :root[data-theme=ocean] { --bg: #1e2e37; --panel: #152229; --panel-2: #263a44; --field: #121c22;
+    --border: #345460; --grid: #21343e; --text: #dceef2; --muted: #86a4ad; --accent: #4fc3d9;
+    --grad-a: #25424e; --grad-b: #1d343e; --pri-a: #2f9db5; --pri-b: #1f7285; }
+  :root[data-theme=forest] { --bg: #262e26; --panel: #1c231c; --panel-2: #2f3a2f; --field: #171c17;
+    --border: #405040; --grid: #283228; --text: #e2e8e0; --muted: #93a093; --accent: #7cc47f;
+    --grad-a: #2e392e; --grad-b: #252e25; --pri-a: #3f9e4f; --pri-b: #2e7c3c; }
+  :root[data-theme=light] { --bg: #e8eaed; --panel: #ffffff; --panel-2: #f1f3f5; --field: #ffffff;
+    --border: #c3c9d0; --grid: #e4e7ea; --text: #1f2328; --muted: #6a7280; --accent: #1f6fd0;
+    --grad-a: #f6f7f8; --grad-b: #e7eaee; color-scheme: light; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--text); font: 12px/1.35 "Segoe UI", Tahoma, sans-serif;
+    padding: 11px 13px; -webkit-user-select: none; user-select: none; display: flex; flex-direction: column; }
+
+  .top { display: flex; gap: 10px; align-items: flex-start; }
+  .form { flex: 1; min-width: 0; display: grid; grid-template-columns: 64px 1fr; gap: 7px 9px; align-items: center; }
+  .form > label { color: var(--muted); text-align: right; }
+  input[type=text], select { width: 100%; padding: 4px 7px; font: inherit; border: 1px solid var(--border);
+    border-radius: 4px; background: var(--field); color: var(--text); outline: none; }
+  input[type=text]:focus, select:focus { border-color: var(--accent); }
+  input[type=text]::placeholder { color: var(--muted); }
+  .row { display: flex; gap: 6px; min-width: 0; }
+  .row > input, .row > select { flex: 1; min-width: 0; }
+  .iconbtn { flex: none; width: 28px; padding: 0; display: grid; place-items: center; border: 1px solid var(--border);
+    border-radius: 4px; background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px; }
+  .iconbtn:hover { border-color: var(--accent); }
+
+  /* file-type preview (right column) */
+  .preview { width: 80px; flex: none; text-align: center; padding-top: 2px; }
+  .preview .glyph { font-size: 40px; line-height: 1; }
+  .preview .ext { font-size: 10px; font-weight: 700; color: var(--accent); letter-spacing: .04em; margin-top: 2px; }
+  .preview .size { font-size: 10.5px; color: var(--text); margin-top: 5px; }
+
+  .remember { grid-column: 2; display: flex; flex-direction: column; gap: 4px; }
+  .remember label { display: flex; align-items: center; gap: 6px; color: var(--text); }
+  .remember input[type=checkbox] { accent-color: var(--accent); }
+  .remember .pathbox { border: 1px dashed var(--border); border-radius: 4px; padding: 4px 8px; color: var(--muted);
+    font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Buttons follow the form directly (no margin-top:auto push) so they sit right
+     under the Description field instead of stranded at the window's bottom edge. */
+  .buttons { display: flex; gap: 7px; justify-content: flex-end; padding-top: 10px; }
+  button.btn { padding: 6px 13px; border-radius: 5px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font: inherit; cursor: pointer;
+    transition: border-color .12s, filter .12s; }
+  button.btn:hover { border-color: var(--accent); }
+  button.btn:active { filter: brightness(.88); }
+  input[type=checkbox] { accent-color: var(--accent); }
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 1px solid var(--accent); outline-offset: 1px; }
+  button.btn.primary { background: linear-gradient(var(--pri-a),var(--pri-b)); border-color: var(--pri-b); color: #fff; font-weight: 600; }
+  button.btn:disabled { opacity: .5; cursor: default; }
+  #msg { color: var(--muted); font-size: 11px; min-height: 14px; margin-top: 6px; }
+  #msg.err { color: #e07a7a; } #msg.ok { color: #5cba6a; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="form">
+      <label for="url">Address</label>
+      <input type="text" id="url" spellcheck="false" autocomplete="off">
+
+      <label for="category">Category</label>
+      <div class="row">
+        <select id="category"></select>
+        <button type="button" class="iconbtn" id="addcat" title="Custom categories aren't supported yet">+</button>
+      </div>
+
+      <label for="folder">Save As</label>
+      <div class="row">
+        <input type="text" id="folder" spellcheck="false" autocomplete="off" placeholder="folder">
+        <button type="button" class="iconbtn" id="browse" title="Browse for a folder">…</button>
+      </div>
+
+      <label for="name">File name</label>
+      <input type="text" id="name" spellcheck="false" autocomplete="off">
+
+      <div class="remember">
+        <label><input type="checkbox" id="remember"> Remember this path for the category</label>
+      </div>
+
+      <label for="desc">Description</label>
+      <input type="text" id="desc" spellcheck="false" autocomplete="off">
+
+      <label for="schedule">Schedule</label>
+      <input type="datetime-local" id="schedule" title="Optional: start this download at a set time (use Download Later / Schedule)">
+    </div>
+
+    <div class="preview">
+      <div class="glyph" id="glyph">&#128462;</div>
+      <div class="ext" id="ext"></div>
+      <div class="size" id="size">…</div>
+    </div>
+  </div>
+
+  <div id="msg"></div>
+  <div class="buttons">
+    <button class="btn" id="later">Download Later</button>
+    <button class="btn primary" id="start">Start Download</button>
+    <button class="btn" id="cancel">Cancel</button>
+  </div>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const ext = qs.get("ext") || "";
+const url = qs.get("url") || "";
+const nativeDialog = qs.get("dialog") === "1" || typeof window.myidmCloseDialog === "function";
+const canBrowse = typeof window.myidmPickFolder === "function";
+// Video mode: opened from the extension's "Download this video" picker. Start
+// posts /api/video (yt-dlp) with the chosen format instead of /api/tasks.
+const isVideo = qs.get("video") === "1";
+const vSelector = qs.get("selector") || "";
+const vAudio = qs.get("audio") === "1";
+const vExt = (qs.get("vext") || (vAudio ? "mp3" : "mp4")).toLowerCase();
+const vTitle = qs.get("title") || "";
+const $ = (id) => document.getElementById(id);
+let catDirs = {}, extMap = {}, folderTouched = false;
+
+const GLYPH = { Compressed:["\u{1F5DC}","ZIP"], Documents:["\u{1F4C4}","DOC"], Music:["\u{1F3B5}","MP3"],
+  Video:["\u{1F3AC}","MP4"], Programs:["⚙️","EXE"], Images:["\u{1F5BC}️","IMG"], General:["\u{1F4C4}",""] };
+// Pictures, videos and archives preview with their own artwork (matching the
+// main window); every other category uses its emoji glyph.
+const CAT_IMG = { Images:"/icons/picture.png", Video:"/icons/video.png", Compressed:"/icons/compress.png" };
+function setGlyph(cat, emoji){
+  if (CAT_IMG[cat]) $("glyph").innerHTML = '<img src="'+CAT_IMG[cat]+'" alt="" style="width:42px;height:42px;object-fit:contain;">';
+  else $("glyph").textContent = emoji;
+}
+
+function extOf(name){ const m=/\.([A-Za-z0-9]+)$/.exec(name||""); return m?m[1].toLowerCase():""; }
+function humanSize(n){ if(!n||n<0)return "unknown"; const u=["B","KB","MB","GB","TB"];let i=0;
+  while(n>=1024&&i<u.length-1){n/=1024;i++;} return `${n.toFixed(i?2:0)} ${u[i]}`; }
+
+function closeDialog(){
+  // Hosted in the main window's iframe (Wails single-window): hand back to the
+  // parent, since window.close() can't close an iframe.
+  try { if (window.parent !== window && window.parent.myidmDialogClosed) { window.parent.myidmDialogClosed(); return; } } catch(_) {}
+  if (nativeDialog && typeof window.myidmCloseDialog === "function") { window.myidmCloseDialog(); return; }
+  try { if (ext && window.chrome && chrome.runtime && chrome.runtime.sendMessage)
+    chrome.runtime.sendMessage(ext, { type: "closeDialog" }, () => {}); } catch(_) {}
+  setTimeout(() => { try { window.close(); } catch(_) {} }, 150);
+}
+
+function updatePreview(){
+  const cat = $("category").value || "General";
+  const [g, fallback] = GLYPH[cat] || GLYPH.General;
+  if (isVideo) {
+    if (vAudio) setGlyph("Music", "\u{1F3B5}"); else setGlyph("Video", "\u{1F3AC}");
+    $("ext").textContent = vExt.toUpperCase();
+    return;
+  }
+  const e = extOf($("name").value);
+  setGlyph(cat, g);
+  $("ext").textContent = (e || fallback || "").toUpperCase();
+}
+
+async function init(){
+  $("url").value = url;
+  $("name").value = isVideo ? (vTitle || "video") : (qs.get("name") || (() => {
+    try { return decodeURIComponent(new URL(url).pathname.split("/").pop() || "") || "download"; } catch { return "download"; }
+  })());
+
+  try {
+    const data = await (await fetch("/api/categories")).json();
+    for (const c of data.categories) {
+      catDirs[c.name] = c.dir;
+      const o = document.createElement("option"); o.value = c.name; o.textContent = c.name; $("category").appendChild(o);
+    }
+    extMap = data.extMap || {};
+  } catch(_) {}
+
+  const setFolderFromCat = () => { const d = catDirs[$("category").value]; if (d !== undefined && !folderTouched) $("folder").value = d; };
+  const autoCat = () => { const cat = isVideo ? "Video" : (extMap[extOf($("name").value)] || "General");
+    if (catDirs[cat] !== undefined) { $("category").value = cat; setFolderFromCat(); } updatePreview(); };
+  autoCat(); setFolderFromCat();
+
+  $("name").addEventListener("input", autoCat);
+  $("category").addEventListener("change", () => { folderTouched = false; setFolderFromCat(); updatePreview(); });
+  $("folder").addEventListener("input", () => { folderTouched = true; });
+  $("addcat").addEventListener("click", () => setMsg("Custom categories aren't supported yet.", "err"));
+
+  if (canBrowse) {
+    $("browse").addEventListener("click", async () => {
+      try { const p = await window.myidmPickFolder($("folder").value || ""); if (p) { $("folder").value = p; folderTouched = true; } } catch(_) {}
+    });
+  } else { $("browse").style.display = "none"; }
+
+  if (isVideo) {
+    $("size").textContent = vAudio ? "audio" : "video";
+  } else if (url) {
+    try {
+      const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 4000);
+      const r = await fetch(url, { method: "HEAD", redirect: "follow", signal: ctrl.signal }); clearTimeout(t);
+      const len = r.headers.get("content-length"); $("size").textContent = len ? humanSize(+len) : "unknown";
+      const cd = r.headers.get("content-disposition");
+      const m = cd && /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(cd);
+      if (m && m[1] && ($("name").value === "download" || !extOf($("name").value))) {
+        $("name").value = decodeURIComponent(m[1].trim()); autoCat();
+      }
+    } catch(_) { $("size").textContent = "unknown"; }
+  }
+
+  $("start").addEventListener("click", () => submit(false));
+  $("later").addEventListener("click", () => submit(true));
+  // Picking a schedule time turns "Download Later" into "Schedule" so it's clear
+  // the deferred button will start the download at that time.
+  $("schedule").addEventListener("input", () => { $("later").textContent = $("schedule").value ? "Schedule" : "Download Later"; });
+  $("cancel").addEventListener("click", closeDialog);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { closeDialog(); return; }
+    if (e.key !== "Enter") return;
+    // Enter on a button activates THAT button (don't also start the download —
+    // Enter on Cancel used to submit anyway); Enter in the Schedule field means
+    // "schedule it", not "start right now ignoring the time I just typed".
+    if (e.target.tagName === "BUTTON") return;
+    if (e.target.id === "schedule" && $("schedule").value) { submit(true); return; }
+    submit(false);
+  });
+  $("name").focus(); $("name").select();
+}
+
+function setMsg(t, cls){ $("msg").className = cls || ""; $("msg").textContent = t; }
+
+async function submit(later){
+  // "Download Later" with a Schedule time set => start at that time (epoch ms);
+  // 0 means start now (Start Download) or queue-paused (Download Later, no time).
+  const schedEl = $("schedule");
+  const at = (later && schedEl && schedEl.value) ? new Date(schedEl.value).getTime() : 0;
+  const scheduling = at > Date.now();
+  if (at > 0 && !scheduling) { // a past time would silently degrade to a plain held item
+    setMsg("That schedule time is in the past — pick a future time (or clear it).", "err");
+    schedEl.focus();
+    return;
+  }
+  $("start").disabled = $("later").disabled = true;
+  setMsg("Adding…");
+  try {
+    const dir = $("folder").value.trim();
+    let endpoint, body;
+    if (isVideo) {
+      endpoint = "/api/video";
+      body = { url: ($("url").value || url).trim(), title: $("name").value.trim() || vTitle || "video",
+        selector: vSelector, ext: vExt, audio: vAudio };
+    } else {
+      endpoint = "/api/tasks";
+      body = { url: ($("url").value || url).trim(), fileName: $("name").value };
+    }
+    if (dir) body.dir = dir; else body.category = $("category").value;
+    if (scheduling) body.scheduleAt = at;       // server creates it in "scheduled" state
+    else if (later) body.later = true;          // server creates it in the Download Later queue (held)
+    const desc = $("desc").value.trim();
+    if (desc) body.description = desc;          // shows in the main list's Description column
+    // "Remember this path for the category": pin this folder so future downloads
+    // of the category keep using it, even after the base folder changes.
+    if (dir && $("remember") && $("remember").checked) {
+      try { await fetch("/api/settings/category", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ category: $("category").value, dir }) }); } catch(_) {}
+    }
+    const r = await fetch(endpoint, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    if (scheduling && data.id) {
+      // Created already in "scheduled" state — it starts on its own at the time.
+    } else if (later && data.id) {
+      // Created in the Download Later queue (held) — start it from there manually.
+    } else if (data.id) {
+      // Show the IDM-style progress view for the download we just started.
+      // In the single-window host, swap this dialog to the status view; otherwise
+      // (native windows) ask the server to pop the separate status window.
+      try { if (window.parent !== window && window.parent.myidmShowStatus) { window.parent.myidmShowStatus(data.id); return; } } catch(_) {}
+      await fetch("/api/detail", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ id: data.id }) }).catch(() => {});
+    }
+    setMsg(scheduling ? "Scheduled ✓" : (later ? "Saved for later ✓" : "Started ✓"), "ok");
+    closeDialog();
+  } catch(e) {
+    $("start").disabled = $("later").disabled = false;
+    setMsg("Failed: " + (e.message || e), "err");
+  }
+}
+init();
+</script>
+<script>
+/* Reveal the native window only after first paint (parked off-screen until then
+   by the gui layer) so the dialog never flashes white/black on open. */
+(function () {
+  function ready() { try { window.myidmReady && window.myidmReady(); } catch (e) {} }
+  function arm() { requestAnimationFrame(function () { requestAnimationFrame(ready); }); }
+  if (document.readyState === 'loading') addEventListener('DOMContentLoaded', arm);
+  else arm();
+})();
+</script>
+<div id="wsz"><span id="wsz-t"></span><span id="wsz-x" title="Hide — Ctrl+Alt+W to toggle">&#10005;</span></div>
+<style>
+#wsz{position:fixed;right:7px;bottom:7px;z-index:2147483647;background:rgba(18,20,23,.9);color:#bfe0ff;font:600 11px/1.25 "Segoe UI",Tahoma,sans-serif;padding:3px 8px;border:1px solid #3a8ee6;border-radius:5px;pointer-events:none;white-space:nowrap;letter-spacing:.2px;}
+#wsz-x{pointer-events:auto;cursor:pointer;margin-left:9px;opacity:.6;}
+#wsz-x:hover{opacity:1;}
+</style>
+<script>
+(function(){var N=2,K="dbox.wsz.show";
+var b=document.getElementById("wsz"),t=document.getElementById("wsz-t"),x=document.getElementById("wsz-x");
+function shown(){try{return localStorage.getItem(K)==="1";}catch(e){return false;}}
+function apply(){b.style.display=shown()?"":"none";}
+function dpr(){return Math.round((window.devicePixelRatio||1)*100)/100;}
+function upd(){t.textContent="#"+N+"  "+window.innerWidth+" × "+window.innerHeight+"  · ×"+dpr();}
+function toggle(){try{localStorage.setItem(K,shown()?"0":"1");}catch(e){}apply();}
+x.addEventListener("click",toggle);
+window.addEventListener("resize",upd);
+window.addEventListener("keydown",function(e){if(e.ctrlKey&&e.altKey&&(e.key==="w"||e.key==="W")){e.preventDefault();toggle();}});
+upd();apply();window.__wszToggle=toggle;
+})();
+</script>
+</body>
+</html>

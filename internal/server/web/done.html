@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>
+/* Follow the main window's theme (UI settings panel); applied pre-paint. */
+(function () {
+  try {
+    var t = localStorage.getItem("dbox.ui.theme");
+    if (t && t !== "graphite") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+})();
+</script>
+<title>Download complete — D BOX</title>
+<style>
+  :root {
+    --bg: #3c4043; --panel: #303336; --panel-2: #44484b; --border: #4e5256;
+    --text: #e6e6e6; --muted: #9aa0a4; --accent: #6aa6e6; --green: #5cba6a;
+    font-size: 13px;
+  }
+
+  /* ---- themes (follow the main window's UI settings) ---- */
+  :root { color-scheme: dark; --grad-a: #42474b; --grad-b: #383c40; --pri-a: #4f8fd6; --pri-b: #3a6ea8; }
+  :root[data-theme=midnight] { --bg: #22262d; --panel: #181c22; --panel-2: #2b313a; --field: #14171c;
+    --border: #3a424d; --grid: #242931; --text: #dfe3e8; --muted: #8b939e; --accent: #64a8f0;
+    --grad-a: #2b313a; --grad-b: #22272e; }
+  :root[data-theme=ocean] { --bg: #1e2e37; --panel: #152229; --panel-2: #263a44; --field: #121c22;
+    --border: #345460; --grid: #21343e; --text: #dceef2; --muted: #86a4ad; --accent: #4fc3d9;
+    --grad-a: #25424e; --grad-b: #1d343e; --pri-a: #2f9db5; --pri-b: #1f7285; }
+  :root[data-theme=forest] { --bg: #262e26; --panel: #1c231c; --panel-2: #2f3a2f; --field: #171c17;
+    --border: #405040; --grid: #283228; --text: #e2e8e0; --muted: #93a093; --accent: #7cc47f;
+    --grad-a: #2e392e; --grad-b: #252e25; --pri-a: #3f9e4f; --pri-b: #2e7c3c; }
+  :root[data-theme=light] { --bg: #e8eaed; --panel: #ffffff; --panel-2: #f1f3f5; --field: #ffffff;
+    --border: #c3c9d0; --grid: #e4e7ea; --text: #1f2328; --muted: #6a7280; --accent: #1f6fd0;
+    --grad-a: #f6f7f8; --grad-b: #e7eaee; color-scheme: light; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--text); font: 12px/1.4 "Segoe UI", Tahoma, sans-serif;
+    display: flex; flex-direction: column; padding: 13px; -webkit-user-select: none; user-select: none; }
+  .head { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
+  .ok { width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    background: rgba(92,186,106,.16); color: var(--green); font-size: 15px; }
+  .ttl { font-size: 14px; font-weight: 650; }
+  .name { font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { color: var(--muted); font-size: 11px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .actions { display: flex; gap: 7px; margin-top: auto; }
+  button { flex: 1; padding: 6px 10px; border-radius: 5px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer;
+    transition: border-color .12s, filter .12s; }
+  button:hover { border-color: var(--accent); }
+  button:active { filter: brightness(.88); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+  button.primary { background: linear-gradient(var(--pri-a),var(--pri-b)); border: 0; color: #fff; font-weight: 600; }
+  .foot { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; margin-top: 9px; }
+  .foot input { accent-color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="head"><div class="ok">&#10003;</div><div class="ttl">Download complete</div></div>
+  <div class="name" id="name">…</div>
+  <div class="meta" id="meta"></div>
+  <div class="actions">
+    <button class="primary" id="open">&#10515; Open file</button>
+    <button id="folder">&#128193; Open folder</button>
+    <button id="close">Close</button>
+  </div>
+  <label class="foot"><input type="checkbox" id="suppress"> Don't show this window for 2 hours</label>
+
+<script>
+const id = new URLSearchParams(location.search).get("id") || "";
+const $ = (s) => document.getElementById(s);
+const openedAt = Date.now();
+let closeTimer = null, filePath = "";
+function humanBytes(n){ if(n==null||n<0)return ""; const u=["B","KB","MB","GB","TB"];let i=0;
+  while(n>=1024&&i<u.length-1){n/=1024;i++;} return n.toFixed(i?1:0)+" "+u[i]; }
+function api(method, path, body){ return fetch(path, { method,
+  headers: body?{"Content-Type":"application/json"}:undefined, body: body?JSON.stringify(body):undefined }); }
+function closeSelf(){
+  if(closeTimer){ clearInterval(closeTimer); closeTimer=null; }
+  // myidmCloseDownload also closes the status window when popups run in-process.
+  if (typeof window.myidmCloseDownload === "function") window.myidmCloseDownload();
+  else if (typeof window.myidmCloseDialog === "function") window.myidmCloseDialog();
+  else window.close();
+}
+function done(){
+  if ($("suppress").checked) api("POST","/api/done-suppress",{seconds:7200});
+  // Closing the completion popup also closes this download's status window. The
+  // hook above covers the shared-window UI; the POST covers the separate-process
+  // popups — the status window polls this stamp and self-closes.
+  try { api("POST","/api/popups/"+id+"/close",{at:Date.now()}); } catch(_) {}
+  closeSelf();
+}
+// Self-close if the status window (our sibling) was closed after we opened.
+async function pollClose(){ try { const r = await fetch("/api/popups/"+id+"/close");
+  const d = await r.json(); if ((d.at||0) > openedAt) closeSelf(); } catch(_) {} }
+async function load(){
+  try {
+    const t = await (await fetch("/api/tasks/"+id)).json();
+    $("name").textContent = t.fileName || "download";
+    $("name").title = t.fileName || "";
+    $("meta").textContent = [t.size>0?humanBytes(t.size):"", t.filePath||""].filter(Boolean).join("   ·   ");
+    $("meta").title = t.filePath || "";
+    filePath = t.filePath || "";
+    const can = t.fileExists !== false;
+    $("open").disabled = !can; $("folder").disabled = !can;
+  } catch(_) {}
+}
+$("open").addEventListener("click", () => { api("POST","/api/tasks/"+id+"/open"); done(); });
+$("folder").addEventListener("click", () => {
+  // Spawn Explorer from THIS (foreground) popup so its window comes to the front,
+  // instead of the background server process opening it behind everything.
+  if (typeof window.myidmShowInFolder === "function" && filePath) window.myidmShowInFolder(filePath);
+  else api("POST","/api/tasks/"+id+"/reveal");
+  done();
+});
+$("close").addEventListener("click", done);
+document.addEventListener("keydown", (e)=>{ if(e.key==="Escape") done(); else if(e.key==="Enter") $("open").click(); });
+load();
+closeTimer = setInterval(pollClose, 300);
+</script>
+<script>
+/* Reveal the native window only after first paint (parked off-screen until then
+   by the gui layer) so the popup never flashes white/black on open. */
+(function () {
+  function ready() { try { window.myidmReady && window.myidmReady(); } catch (e) {} }
+  function arm() { requestAnimationFrame(function () { requestAnimationFrame(ready); }); }
+  if (document.readyState === 'loading') addEventListener('DOMContentLoaded', arm);
+  else arm();
+})();
+</script>
+<div id="wsz"><span id="wsz-t"></span><span id="wsz-x" title="Hide — Ctrl+Alt+W to toggle">&#10005;</span></div>
+<style>
+#wsz{position:fixed;right:7px;bottom:7px;z-index:2147483647;background:rgba(18,20,23,.9);color:#bfe0ff;font:600 11px/1.25 "Segoe UI",Tahoma,sans-serif;padding:3px 8px;border:1px solid #3a8ee6;border-radius:5px;pointer-events:none;white-space:nowrap;letter-spacing:.2px;}
+#wsz-x{pointer-events:auto;cursor:pointer;margin-left:9px;opacity:.6;}
+#wsz-x:hover{opacity:1;}
+</style>
+<script>
+(function(){var N=4,K="dbox.wsz.show";
+var b=document.getElementById("wsz"),t=document.getElementById("wsz-t"),x=document.getElementById("wsz-x");
+function shown(){try{return localStorage.getItem(K)==="1";}catch(e){return false;}}
+function apply(){b.style.display=shown()?"":"none";}
+function dpr(){return Math.round((window.devicePixelRatio||1)*100)/100;}
+function upd(){t.textContent="#"+N+"  "+window.innerWidth+" × "+window.innerHeight+"  · ×"+dpr();}
+function toggle(){try{localStorage.setItem(K,shown()?"0":"1");}catch(e){}apply();}
+x.addEventListener("click",toggle);
+window.addEventListener("resize",upd);
+window.addEventListener("keydown",function(e){if(e.ctrlKey&&e.altKey&&(e.key==="w"||e.key==="W")){e.preventDefault();toggle();}});
+upd();apply();window.__wszToggle=toggle;
+})();
+</script>
+</body>
+</html>

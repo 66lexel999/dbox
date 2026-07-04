@@ -1,0 +1,28 @@
+# build outputs
+/bin/
+/dist/
+/build/tools/
+.e2e/
+*.exe
+*.exe.old
+*.syso
+
+# bundled/embedded runtime caches (huge, machine-specific)
+*WebView2*/
+DBox.exe.WebView2/
+
+# logs & local state
+*.log
+VERSION.bak
+
+# node (only used for local JS syntax checks)
+node_modules/
+
+# editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# scratch icon sources (not needed to build)
+/build/icons-src/

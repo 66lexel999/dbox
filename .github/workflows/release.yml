@@ -1,0 +1,120 @@
+# Push a tag like v1.1.0 → this builds DBox.exe + the installer, generates
+# latest.json, publishes a GitHub Release with the binaries, and deploys the
+# website (with the fresh latest.json) to GitHub Pages. Fully automatic; no
+# secrets to configure — it uses the built-in GITHUB_TOKEN and reads the
+# owner/repo from the workflow context, so it works for any fork/username.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the GitHub Release
+  pages: write      # deploy Pages
+  id-token: write   # Pages OIDC
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Derive version + URLs from the tag and repo
+        id: meta
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag -replace '^v',''
+          $owner = "${{ github.repository_owner }}".ToLower()
+          $repo  = "${{ github.event.repository.name }}"
+          $manifest  = "https://$owner.github.io/$repo/latest.json"
+          $exeUrl    = "https://github.com/${{ github.repository }}/releases/download/$tag/DBox.exe"
+          $instUrl   = "https://github.com/${{ github.repository }}/releases/download/$tag/DBox-Setup-$ver.exe"
+          "version=$ver"      | Out-File -Append $env:GITHUB_OUTPUT
+          "manifest=$manifest"| Out-File -Append $env:GITHUB_OUTPUT
+          "exeUrl=$exeUrl"    | Out-File -Append $env:GITHUB_OUTPUT
+          "instUrl=$instUrl"  | Out-File -Append $env:GITHUB_OUTPUT
+
+      - name: Fetch bundled yt-dlp (aria2c self-provisions at first run)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/tools | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile build/tools/yt-dlp.exe
+
+      - name: Build DBox.exe (version + manifest stamped)
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.meta.outputs.version }}"
+          $man = "${{ steps.meta.outputs.manifest }}"
+          $ld = "-H windowsgui -X myidm/internal/version.Version=$ver -X myidm/internal/version.ManifestURL=$man"
+          go build -tags "desktop production" -ldflags $ld -o dist/DBox.exe ./cmd/myidm
+          if ((Select-String -Path dist/DBox.exe -Pattern 'permonitorv2' -SimpleMatch -List).Count -lt 1) {
+            throw "DPI manifest missing from build"
+          }
+
+      - name: Build the installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          New-Item -ItemType Directory -Force bin | Out-Null
+          Copy-Item dist/DBox.exe bin/DBox.exe -Force   # installer reads ..\bin\DBox.exe
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "/DMyAppVersion=${{ steps.meta.outputs.version }}" `
+            "/DToolsDir=$((Resolve-Path build/tools).Path)" `
+            build/installer.iss
+
+      - name: Generate latest.json
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.meta.outputs.version }}"
+          $sha = (Get-FileHash dist/DBox.exe -Algorithm SHA256).Hash.ToLower()
+          $notes = if (Test-Path RELEASE_NOTES.md) { Get-Content RELEASE_NOTES.md -Raw } else { "D BOX $ver" }
+          $obj = [ordered]@{
+            version      = $ver
+            url          = "${{ steps.meta.outputs.exeUrl }}"
+            installerUrl = "${{ steps.meta.outputs.instUrl }}"
+            sha256       = $sha
+            date         = (Get-Date -Format 'yyyy-MM-dd')
+            notes        = $notes.Trim()
+            mandatory    = $false
+          }
+          $json = $obj | ConvertTo-Json -Depth 5
+          $json | Out-File -Encoding utf8 dist/latest.json
+          $json | Out-File -Encoding utf8 website/latest.json
+          Write-Host $json
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/DBox.exe
+            dist/DBox-Setup-${{ steps.meta.outputs.version }}.exe
+          generate_release_notes: true
+          name: D BOX ${{ steps.meta.outputs.version }}
+
+      - name: Upload the website (with fresh latest.json) for Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website
+
+  deploy-pages:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

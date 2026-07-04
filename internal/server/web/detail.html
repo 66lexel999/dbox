@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>
+/* Follow the main window's theme (UI settings panel); applied pre-paint. */
+(function () {
+  try {
+    var t = localStorage.getItem("dbox.ui.theme");
+    if (t && t !== "graphite") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+})();
+</script>
+<title>Download status — D BOX</title>
+<style>
+  :root {
+    --bg: #3c4043; --panel: #303336; --panel-2: #44484b; --border: #4e5256; --grid: #3c4043;
+    --text: #e6e6e6; --muted: #9aa0a4; --accent: #6aa6e6; --green: #5cba6a; --red: #e07a7a;
+  }
+
+  /* ---- themes (follow the main window's UI settings) ---- */
+  :root { color-scheme: dark; --grad-a: #42474b; --grad-b: #383c40; --pri-a: #4f8fd6; --pri-b: #3a6ea8; --text-dim: #cfd2d4; }
+  :root[data-theme=midnight] { --bg: #22262d; --panel: #181c22; --panel-2: #2b313a; --field: #14171c;
+    --border: #3a424d; --grid: #242931; --text: #dfe3e8; --muted: #8b939e; --accent: #64a8f0;
+    --grad-a: #2b313a; --grad-b: #22272e; }
+  :root[data-theme=ocean] { --bg: #1e2e37; --panel: #152229; --panel-2: #263a44; --field: #121c22;
+    --border: #345460; --grid: #21343e; --text: #dceef2; --muted: #86a4ad; --accent: #4fc3d9;
+    --grad-a: #25424e; --grad-b: #1d343e; --pri-a: #2f9db5; --pri-b: #1f7285; }
+  :root[data-theme=forest] { --bg: #262e26; --panel: #1c231c; --panel-2: #2f3a2f; --field: #171c17;
+    --border: #405040; --grid: #283228; --text: #e2e8e0; --muted: #93a093; --accent: #7cc47f;
+    --grad-a: #2e392e; --grad-b: #252e25; --pri-a: #3f9e4f; --pri-b: #2e7c3c; }
+  :root[data-theme=light] { --bg: #e8eaed; --panel: #ffffff; --panel-2: #f1f3f5; --field: #ffffff;
+    --border: #c3c9d0; --grid: #e4e7ea; --text: #1f2328; --muted: #6a7280; --accent: #1f6fd0;
+    --grad-a: #f6f7f8; --grad-b: #e7eaee; --text-dim: #4a5361; color-scheme: light; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--text); font: 11.5px/1.4 "Segoe UI", Tahoma, sans-serif;
+    display: flex; flex-direction: column; padding: 8px 11px; -webkit-user-select: none; user-select: none; }
+
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .tab { padding: 4px 10px; font-size: 11.5px; color: var(--muted); border: 1px solid transparent; border-bottom: 0;
+    border-radius: 5px 5px 0 0; cursor: default; }
+  .tab.active { color: var(--text); background: var(--panel); border-color: var(--border); }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px; }
+  .url { color: var(--accent); font-size: 11px; word-break: break-all; max-height: 30px; overflow: hidden; margin-bottom: 8px; }
+  table.info { width: 100%; border-collapse: collapse; }
+  table.info td { padding: 2px 0; vertical-align: top; }
+  table.info td.k { color: var(--muted); width: 108px; }
+  table.info td.v { font-variant-numeric: tabular-nums; }
+
+  .pbar { position: relative; height: 18px; border-radius: 2px; background: var(--panel-2); border: 1px solid var(--border);
+    overflow: hidden; margin: 9px 0 3px; }
+  /* The fill: a green base plus a translucent highlight band that flows left→right
+     on a loop, so the bar looks like liquid moving inside even when full (100%).
+     Loop endpoints: with a 40%-wide band, background-position-x P maps to offset
+     P×(100%−40%), so the band is fully off-canvas only at P ≤ −67% and P ≥ 167% —
+     the old −45%…150% left a visible sliver teleporting at each loop boundary. */
+  .pbar > div { height: 100%; width: 0; transition: width .3s;
+    background-image:
+      linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.30) 50%, rgba(255,255,255,0) 100%),
+      linear-gradient(180deg, #63c272, #3f9e4f);
+    background-repeat: no-repeat, no-repeat;
+    background-size: 40% 100%, 100% 100%;
+    background-position: -70% 0, 0 0; }
+  /* Liquid flows only while data is actually flowing; a paused/failed/complete
+     bar sits still instead of implying activity. */
+  .pbar > div.live { animation: liquid 1.5s linear infinite; }
+  .pbar > div.stale { filter: saturate(.45) brightness(.85); } /* paused/failed: dimmed */
+  @keyframes liquid { from { background-position: -70% 0, 0 0; } to { background-position: 170% 0, 0 0; } }
+  @media (prefers-reduced-motion: reduce) { .pbar > div.live { animation: none; } }
+  .pbar .pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 10.5px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.75);
+    font-variant-numeric: tabular-nums; pointer-events: none; }
+
+  .actions { display: flex; gap: 7px; justify-content: flex-end; margin: 9px 0; }
+  .actions button { padding: 5px 13px; border-radius: 5px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer;
+    transition: border-color .12s, filter .12s; }
+  .actions button:hover { border-color: var(--accent); }
+  .actions button:active { filter: brightness(.88); }
+  .actions button:disabled { opacity: .45; cursor: not-allowed; }
+  button:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+  .conntitle { color: var(--muted); font-size: 11px; text-align: center; margin: 3px 0 5px; }
+  .segbar { position: relative; height: 13px; border-radius: 4px; background: var(--panel-2);
+    border: 1px solid var(--border); overflow: hidden; margin-bottom: 8px; }
+  .segbar .seg { position: absolute; top: 0; bottom: 0; border-right: 1px solid var(--bg); }
+  .segbar .seg .fill { height: 100%; background: linear-gradient(var(--pri-a), var(--pri-b)); }
+
+  /* app-styled confirm (replaces the browser's "127.0.0.1 says" dialog) */
+  #cfWrap { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none;
+    align-items: center; justify-content: center; z-index: 100; }
+  #cfWrap.show { display: flex; }
+  .cfbox { width: 300px; max-width: 90vw; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 16px 50px rgba(0,0,0,.55); overflow: hidden;
+    animation: cfpop .14s ease-out; }
+  @keyframes cfpop { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .cfbox .cfbody { display: flex; align-items: flex-start; gap: 10px; padding: 14px 15px 12px; }
+  .cfbox .warn { width: 28px; height: 28px; border-radius: 50%; flex: none; font-size: 14px;
+    background: rgba(216,178,74,.15); color: #d8b24a; display: grid; place-items: center; }
+  .cfbox .cfmsg { font-size: 12px; line-height: 1.5; padding-top: 4px; }
+  .cfbox .cfa { display: flex; gap: 7px; padding: 0 15px 13px; }
+  .cfbox .cfa button { flex: 1; padding: 6px 10px; border-radius: 5px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font: inherit; cursor: pointer;
+    transition: border-color .12s, filter .12s; }
+  .cfbox .cfa button:hover { border-color: var(--accent); }
+  .cfbox .cfa button.dangerbtn { background: linear-gradient(#c96a6a,#a94f4f); border: 0; color: #fff; font-weight: 600; }
+
+  .conns { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+  table.ct { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.ct th { position: sticky; top: 0; background: linear-gradient(var(--grad-a),var(--grad-b)); color: var(--text-dim);
+    text-align: left; font-weight: 600; padding: 4px 9px; border-bottom: 1px solid var(--border); }
+  table.ct td { padding: 3px 9px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  table.ct td.n { width: 32px; color: var(--muted); }
+  table.ct td.dl { width: 104px; }
+  .info-recv { color: var(--green); }
+  .info-idle { color: var(--muted); }
+  .info-err { color: var(--red); }
+</style>
+</head>
+<body>
+  <div class="tabs">
+    <div class="tab active">Download status</div>
+    <div class="tab">Speed Limiter</div>
+    <div class="tab">Options on completion</div>
+  </div>
+
+  <div class="card">
+    <div class="url" id="url"></div>
+    <table class="info">
+      <tr><td class="k">Status</td><td class="v" id="status">…</td></tr>
+      <tr><td class="k">File size</td><td class="v" id="size"></td></tr>
+      <tr><td class="k">Downloaded</td><td class="v" id="downloaded"></td></tr>
+      <tr><td class="k">Transfer rate</td><td class="v" id="rate"></td></tr>
+      <tr><td class="k">Avg / Max / Min</td><td class="v" id="rateStats"></td></tr>
+      <tr><td class="k">Time left</td><td class="v" id="eta"></td></tr>
+      <tr><td class="k">Resume capability</td><td class="v" id="resume"></td></tr>
+    </table>
+    <div class="pbar"><div id="pbar"></div><span class="pct" id="pct">0%</span></div>
+  </div>
+
+  <div class="actions">
+    <button id="pause">&#10074;&#10074; Pause</button>
+    <button id="resumeBtn">&#9654; Resume</button>
+    <button id="cancel">Cancel</button>
+    <button id="close">Close</button>
+  </div>
+
+  <div class="conntitle">Start positions and download progress by connections</div>
+  <div class="segbar" id="segbar"></div>
+
+  <div class="conns">
+    <table class="ct">
+      <thead><tr><th class="n">N.</th><th class="dl">Downloaded</th><th>Info</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div id="cfWrap">
+    <div class="cfbox">
+      <div class="cfbody"><div class="warn">&#9888;</div><div class="cfmsg">Cancel and delete this download?</div></div>
+      <div class="cfa"><button id="cfYes" class="dangerbtn">Delete</button><button id="cfNo">Keep</button></div>
+    </div>
+  </div>
+
+<script>
+const id = new URLSearchParams(location.search).get("id") || "";
+const $ = (s) => document.getElementById(s);
+const openedAt = Date.now();
+let timer = null, closeTimer = null;
+function humanBytes(n){ if(n==null||n<0)return "0 B"; const u=["B","KB","MB","GB","TB"];let i=0;
+  while(n>=1024&&i<u.length-1){n/=1024;i++;} return n.toFixed(i?(n>=100?1:2):0)+" "+u[i]; }
+function humanETA(s){ if(s==null||s<0||!isFinite(s))return "—"; s=Math.round(s);
+  if(s<60)return s+" sec"; if(s<3600)return Math.floor(s/60)+" min "+(s%60)+" sec";
+  return Math.floor(s/3600)+" hr "+Math.floor((s%3600)/60)+" min"; }
+function api(method, path, body){ return fetch(path,{ method,
+  headers: body?{"Content-Type":"application/json"}:undefined, body: body?JSON.stringify(body):undefined }); }
+function stopTimers(){ if(timer){clearInterval(timer);timer=null;} if(closeTimer){clearInterval(closeTimer);closeTimer=null;} }
+function closeSelf(){ stopTimers();
+  try { if (window.parent !== window && window.parent.myidmDialogClosed) { window.parent.myidmDialogClosed(); return; } } catch(_) {}
+  if(typeof window.myidmCloseDialog==="function") window.myidmCloseDialog(); else window.close(); }
+// User hit Close/Cancel/Esc: dismiss this window AND its sibling (the completion
+// popup for the same download) by stamping a close time the sibling polls for.
+function closeAll(){ try { api("POST","/api/popups/"+id+"/close",{at:Date.now()}); } catch(_) {} closeSelf(); }
+// The sibling popup closed if its POSTed time is newer than when we opened.
+async function pollClose(){ try { const r = await fetch("/api/popups/"+id+"/close");
+  const d = await r.json(); if ((d.at||0) > openedAt) closeSelf(); } catch(_) {} }
+
+function infoFor(t, seg){
+  const len = seg.end - seg.start + 1;
+  if (seg.end >= 0 && seg.done >= len) return ['Complete','info-recv'];
+  if (t.status === 'downloading') return ['Receiving data…','info-recv'];
+  if (t.status === 'paused') return ['Paused','info-idle'];
+  if (t.status === 'failed') return ['Disconnect.','info-err'];
+  if (t.status === 'queued') return ['Waiting…','info-idle'];
+  return ['—','info-idle'];
+}
+
+function renderSegbar(t){
+  if (!t.size || t.size <= 0 || !(t.segments||[]).length) { $("segbar").innerHTML = ""; return; }
+  let html = "";
+  for (const s of t.segments) {
+    const len = s.end - s.start + 1;
+    const left = (s.start / t.size) * 100, width = (len / t.size) * 100;
+    const fill = Math.min(100, (s.done / len) * 100);
+    html += `<div class="seg" style="left:${left}%;width:${width}%"><div class="fill" style="width:${fill}%"></div></div>`;
+  }
+  $("segbar").innerHTML = html;
+}
+
+async function tick(){
+  let t;
+  try { const r = await fetch("/api/tasks/"+id); if(!r.ok) throw r.status; t = await r.json(); }
+  catch(err) {
+    // 404 = the task was deleted (e.g. cancelled from the main window): stop
+    // polling a dead id forever and gray the controls. Network hiccups (the app
+    // restarting) keep polling and recover on the next tick.
+    if (err === 404) {
+      $("status").textContent = "Task removed";
+      $("pause").disabled = $("resumeBtn").disabled = $("cancel").disabled = true;
+      if (timer) { clearInterval(timer); timer = null; }
+      const bar = $("pbar"); bar.classList.remove("live"); bar.classList.add("stale");
+    }
+    return;
+  }
+
+  const pct = t.progress >= 0 ? (t.progress*100) : 0;
+  document.title = (t.status==='downloading' ? Math.round(pct)+"% " : "") + (t.fileName || "Download status");
+  $("url").textContent = t.url; $("url").title = t.url;
+  $("status").textContent = ({downloading:"Receiving data…",queued:"Waiting for a slot…",paused:"Paused",
+    completed:"Complete",failed:"Error: "+(t.error||"failed")})[t.status] || t.status;
+  $("size").textContent = t.size>0 ? humanBytes(t.size) : "unknown";
+  $("downloaded").textContent = humanBytes(t.downloaded) + (t.size>0 ? `  ( ${pct.toFixed(2)} % )` : "");
+  $("rate").textContent = t.status==='downloading' ? humanBytes(t.speed)+"/sec" : "—";
+  const rate = (v) => v>0 ? humanBytes(v)+"/s" : "—";
+  $("rateStats").textContent = (t.speedMax>0)
+    ? `${rate(t.speedAvg)}  ·  ${rate(t.speedMax)}  ·  ${rate(t.speedMin)}` : "—";
+  $("eta").textContent = t.status==='downloading' ? humanETA(t.eta) : "—";
+  $("resume").textContent = t.ranged ? "Yes" : "No";
+  const bar = $("pbar");
+  bar.style.width = Math.min(100,pct) + "%";
+  bar.classList.toggle("live", t.status==='downloading');
+  bar.classList.toggle("stale", t.status==='paused' || t.status==='failed');
+  $("pct").textContent = (pct >= 100 ? "100" : pct.toFixed(1)) + "%";
+
+  const active = t.status==='downloading' || t.status==='queued';
+  $("pause").disabled = !active;
+  $("resumeBtn").disabled = !(t.status==='paused' || t.status==='failed');
+
+  renderSegbar(t);
+  $("rows").innerHTML = (t.segments||[]).map((s,i)=>{
+    const [info,cls] = infoFor(t,s);
+    return `<tr><td class="n">${i+1}</td><td class="dl">${humanBytes(s.done)}</td><td class="${cls}">${info}</td></tr>`;
+  }).join("") || `<tr><td class="n">1</td><td class="dl">${humanBytes(t.downloaded)}</td><td class="info-recv">Receiving data…</td></tr>`;
+}
+
+$("pause").addEventListener("click", () => api("POST","/api/tasks/"+id+"/pause"));
+$("resumeBtn").addEventListener("click", () => api("POST","/api/tasks/"+id+"/resume"));
+// In-window confirm instead of the browser's "127.0.0.1 says" dialog.
+const cfOpen = () => $("cfWrap").classList.contains("show");
+const cfHide = () => $("cfWrap").classList.remove("show");
+$("cancel").addEventListener("click", () => { $("cfWrap").classList.add("show"); $("cfYes").focus(); });
+$("cfNo").addEventListener("click", cfHide);
+$("cfWrap").addEventListener("click", (e) => { if (e.target === $("cfWrap")) cfHide(); });
+$("cfYes").addEventListener("click", () => { cfHide(); api("DELETE","/api/tasks/"+id+"?file=1"); closeAll(); });
+$("close").addEventListener("click", closeAll);
+// Escape peels one layer: the confirm first, then the window itself.
+document.addEventListener("keydown", (e)=>{ if(e.key==="Escape"){ if(cfOpen()) cfHide(); else closeAll(); } });
+
+tick();
+timer = setInterval(tick, 700);
+closeTimer = setInterval(pollClose, 300);
+</script>
+<script>
+/* Reveal the native window only after first paint (parked off-screen until then
+   by the gui layer) so the status window never flashes white/black on open. */
+(function () {
+  function ready() { try { window.myidmReady && window.myidmReady(); } catch (e) {} }
+  function arm() { requestAnimationFrame(function () { requestAnimationFrame(ready); }); }
+  if (document.readyState === 'loading') addEventListener('DOMContentLoaded', arm);
+  else arm();
+})();
+</script>
+<div id="wsz"><span id="wsz-t"></span><span id="wsz-x" title="Hide — Ctrl+Alt+W to toggle">&#10005;</span></div>
+<style>
+#wsz{position:fixed;right:7px;bottom:7px;z-index:2147483647;background:rgba(18,20,23,.9);color:#bfe0ff;font:600 11px/1.25 "Segoe UI",Tahoma,sans-serif;padding:3px 8px;border:1px solid #3a8ee6;border-radius:5px;pointer-events:none;white-space:nowrap;letter-spacing:.2px;}
+#wsz-x{pointer-events:auto;cursor:pointer;margin-left:9px;opacity:.6;}
+#wsz-x:hover{opacity:1;}
+</style>
+<script>
+(function(){var N=3,K="dbox.wsz.show";
+var b=document.getElementById("wsz"),t=document.getElementById("wsz-t"),x=document.getElementById("wsz-x");
+function shown(){try{return localStorage.getItem(K)==="1";}catch(e){return false;}}
+function apply(){b.style.display=shown()?"":"none";}
+function dpr(){return Math.round((window.devicePixelRatio||1)*100)/100;}
+function upd(){t.textContent="#"+N+"  "+window.innerWidth+" × "+window.innerHeight+"  · ×"+dpr();}
+function toggle(){try{localStorage.setItem(K,shown()?"0":"1");}catch(e){}apply();}
+x.addEventListener("click",toggle);
+window.addEventListener("resize",upd);
+window.addEventListener("keydown",function(e){if(e.ctrlKey&&e.altKey&&(e.key==="w"||e.key==="W")){e.preventDefault();toggle();}});
+upd();apply();window.__wszToggle=toggle;
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "url": "https://github.com/66lexel999/dbox/releases/download/v1.0.0/DBox.exe",
+  "installerUrl": "https://github.com/66lexel999/dbox/releases/download/v1.0.0/DBox-Setup-1.0.0.exe",
+  "sha256": "00fd2ef573d9c836f160269df979c5a549e7fa7ca155cc4a6755ac255e58e9db",
+  "date": "2026-07-04",
+  "notes": "See the website for what's new in v1.0.0.",
+  "mandatory": false
+}

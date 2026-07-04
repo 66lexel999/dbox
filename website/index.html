@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D BOX — Download Manager</title>
+<meta name="description" content="D BOX — a fast, free segmented download manager for Windows. Multi-connection downloads, pause/resume, YouTube & video capture, browser integration.">
+<link rel="icon" type="image/png" href="icons/appicon.png">
+<style>
+  :root {
+    --bg: #1b1e23; --panel: #23272e; --border: #333a44; --text: #e8ebef; --muted: #99a2ad;
+    --accent: #4f8fd6; --accent2: #3a6ea8; --green: #5cba6a;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: radial-gradient(1200px 600px at 50% -10%, #2a3340 0%, var(--bg) 60%); color: var(--text);
+    font: 16px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif; min-height: 100vh; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 22px; }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 22px 0; }
+  header img { width: 34px; height: 34px; }
+  header .name { font-weight: 700; font-size: 19px; letter-spacing: .3px; }
+  header .spacer { flex: 1; }
+  header a { color: var(--muted); text-decoration: none; font-size: 14px; margin-left: 18px; }
+  header a:hover { color: var(--text); }
+
+  .hero { text-align: center; padding: 54px 0 40px; }
+  .hero .logo { width: 92px; height: 92px; margin-bottom: 18px; filter: drop-shadow(0 8px 24px rgba(0,0,0,.5)); }
+  .hero h1 { font-size: 2.6rem; line-height: 1.15; margin-bottom: 12px; }
+  .hero p.tag { font-size: 1.18rem; color: var(--muted); max-width: 620px; margin: 0 auto 26px; }
+
+  .cta { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: #fff;
+    background: linear-gradient(var(--accent), var(--accent2)); padding: 15px 30px; border-radius: 11px;
+    font-size: 1.12rem; font-weight: 650; box-shadow: 0 10px 30px rgba(31,111,208,.35); transition: transform .1s, box-shadow .15s; }
+  .cta:hover { transform: translateY(-2px); box-shadow: 0 14px 38px rgba(31,111,208,.45); }
+  .cta .big { font-size: 1.3rem; }
+  .sub { color: var(--muted); font-size: .86rem; margin-top: 12px; }
+  .sub a { color: var(--muted); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; padding: 30px 0 10px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .card .ic { font-size: 26px; }
+  .card h3 { font-size: 1.04rem; margin: 10px 0 5px; }
+  .card p { color: var(--muted); font-size: .92rem; }
+
+  .steps { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 22px 26px; margin: 26px 0; }
+  .steps h2 { font-size: 1.15rem; margin-bottom: 12px; }
+  .steps ol { margin: 0; padding-left: 20px; color: var(--muted); }
+  .steps li { margin: 7px 0; }
+  .steps b { color: var(--text); }
+
+  footer { color: var(--muted); font-size: .84rem; text-align: center; padding: 34px 0 46px; }
+  .note { text-align: center; color: var(--muted); font-size: .82rem; margin-top: 8px; }
+  code { background: #12151a; padding: 2px 6px; border-radius: 4px; font-size: .86em; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <img src="icons/appicon.png" alt="D BOX">
+      <span class="name">D BOX</span>
+      <span class="spacer"></span>
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a id="ghLink" href="https://github.com/66lexel999/dbox" target="_blank" rel="noopener">GitHub</a>
+    </header>
+
+    <section class="hero">
+      <img class="logo" src="icons/appicon.png" alt="D BOX">
+      <h1>Download everything, faster.</h1>
+      <p class="tag">D BOX is a free segmented download manager for Windows — multi-connection speed,
+        pause &amp; resume, crash recovery, YouTube &amp; video capture, and one-click browser integration.</p>
+      <a class="cta" id="downloadBtn" href="#" download>
+        <span class="big">&#8681;</span>
+        <span>Download for Windows<br><small style="font-weight:400;opacity:.85;font-size:.8rem;" id="verLabel">Latest release</small></span>
+      </a>
+      <div class="sub">Free · Windows 10/11 (64-bit) · <a id="exeLink" href="#">portable .exe</a></div>
+    </section>
+
+    <section id="features" class="grid">
+      <div class="card"><div class="ic">&#9889;</div><h3>Segmented speed</h3><p>Splits each file across many connections to saturate your line — far faster than a single stream.</p></div>
+      <div class="card"><div class="ic">&#9199;</div><h3>Pause &amp; resume</h3><p>Stop any download and pick it up later. Survives crashes and reboots without losing progress.</p></div>
+      <div class="card"><div class="ic">&#127916;</div><h3>Video &amp; playlists</h3><p>Grab YouTube videos, whole playlists, and Instagram reels via the built-in yt-dlp engine.</p></div>
+      <div class="card"><div class="ic">&#128279;</div><h3>Browser capture</h3><p>The companion extension catches downloads and hands them straight to D BOX — like IDM.</p></div>
+      <div class="card"><div class="ic">&#128260;</div><h3>Auto-updates</h3><p>D BOX updates itself in one click — no reinstalling, no losing your download list.</p></div>
+      <div class="card"><div class="ic">&#127912;</div><h3>Themes &amp; scale</h3><p>Five themes, adjustable UI and text size, scheduling, and a Download-Later queue.</p></div>
+    </section>
+
+    <section id="install" class="steps">
+      <h2>Installing</h2>
+      <ol>
+        <li>Click <b>Download for Windows</b> above and run the installer.</li>
+        <li>If Windows shows a <b>&ldquo;Windows protected your PC&rdquo;</b> screen, click <b>More info → Run anyway</b> (the app is safe; it's just not code-signed yet).</li>
+        <li>D BOX opens and lives in your tray. New releases prompt you to update with one click.</li>
+      </ol>
+      <div class="note">Prefer no installer? Grab the <a id="exeLink2" href="#">portable DBox.exe</a> and run it directly.</div>
+    </section>
+
+    <footer>
+      D BOX — free download manager. <span id="ver2"></span>
+    </footer>
+  </div>
+
+<script>
+// The page reads latest.json (same file the app uses) so the download button and
+// version label always point at the newest release — you only update one file.
+(async () => {
+  try {
+    const r = await fetch("latest.json", { cache: "no-cache" });
+    const m = await r.json();
+    const dl = m.installerUrl || m.url;
+    document.getElementById("downloadBtn").href = dl;
+    document.getElementById("exeLink").href = m.url;
+    document.getElementById("exeLink2").href = m.url;
+    if (m.version) {
+      document.getElementById("verLabel").textContent = "Version " + m.version;
+      document.getElementById("ver2").textContent = "v" + m.version;
+    }
+  } catch (e) {
+    document.getElementById("verLabel").textContent = "Download";
+  }
+})();
+</script>
+</body>
+</html>
