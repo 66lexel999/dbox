@@ -35,7 +35,27 @@ system: one small static JSON file you overwrite each release.
 
 ---
 
-## Cutting a release (every new version)
+## Cutting a release — the easy way (automated)
+
+Once the repo is up with Pages enabled, you never touch the build machine again:
+
+```bash
+# bump VERSION if you like, then:
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+The **`.github/workflows/release.yml`** workflow (triggered by any `v*` tag) then,
+on GitHub's runners: builds `DBox.exe` (version + manifest URL stamped) and the
+installer, fetches yt-dlp, generates `latest.json` with the real sha256, publishes
+a **GitHub Release** with both binaries, and **deploys the website** (with the
+fresh `latest.json`) to Pages. Minutes later, every running D BOX sees the update.
+Put release notes in `RELEASE_NOTES.md` (repo root) to have them shown in the
+in-app update dialog.
+
+## Cutting a release — the manual way (local build)
+
+If you'd rather build on your own machine:
 
 ```bash
 scripts/release.sh 1.1.0
