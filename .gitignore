@@ -5,7 +5,8 @@
 .e2e/
 *.exe
 *.exe.old
-*.syso
+# NOTE: cmd/myidm/rsrc_windows_amd64.syso IS committed — Go auto-links it to
+# embed the DPI manifest + app icon, and CI has no tool to regenerate it.
 
 # bundled/embedded runtime caches (huge, machine-specific)
 *WebView2*/

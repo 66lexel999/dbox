@@ -60,9 +60,11 @@ jobs:
           $man = "${{ steps.meta.outputs.manifest }}"
           $ld = "-H windowsgui -X myidm/internal/version.Version=$ver -X myidm/internal/version.ManifestURL=$man"
           go build -tags "desktop production" -ldflags $ld -o dist/DBox.exe ./cmd/myidm
-          if ((Select-String -Path dist/DBox.exe -Pattern 'permonitorv2' -SimpleMatch -List).Count -lt 1) {
-            throw "DPI manifest missing from build"
-          }
+          # Confirm the DPI manifest got embedded (from the committed .syso). Read
+          # the whole file as Latin1 (1 byte = 1 char, no data loss) and substring-
+          # search — Select-String is line-based and unreliable on binaries.
+          $blob = [System.IO.File]::ReadAllText('dist/DBox.exe', [System.Text.Encoding]::GetEncoding('iso-8859-1'))
+          if (-not $blob.Contains('permonitorv2')) { throw "DPI manifest missing from build (.syso not linked?)" }
 
       - name: Build the installer (Inno Setup)
         shell: pwsh
